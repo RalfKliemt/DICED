@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 import tkinter as tk
+import tkinter.font as tkfont
 from typing import Any
 
 from .core import CalculationResult, RollSequenceCalculator, parse_roll_sequence
@@ -14,13 +16,13 @@ class RollCoasterApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("RollCoaster")
-        self.root.geometry("820x820")
-        self.root.minsize(640, 640)
+        self.root.geometry("640x640")
+        self.root.minsize(512, 512)
 
         self.calculator = RollSequenceCalculator()
         self.sequence_var = tk.StringVar(value="3++")
-        self.result_main_var = tk.StringVar(value="-%")
-        self.result_rr_var = tk.StringVar(value="(-% / -%)")
+        self.result_main_var = tk.StringVar(value="")
+        self.result_rr_var = tk.StringVar(value="")
         self.log_lines: list[str] = []
 
         self._build_layout()
@@ -74,10 +76,10 @@ class RollCoasterApp:
 
         self.headline_label = tk.Label(
             self.canvas,
-            text="Rolls Coaster",
-            font=("Helvetica", 30, "bold"),
+            text="ROLLS COASTER",
+            font=("Impact", 32),
             bg="#fdfdfc",
-            fg="#222222",
+            fg="#7a1515",
         )
 
         self.result_label = tk.Label(
@@ -86,7 +88,7 @@ class RollCoasterApp:
             font=("Helvetica", 48, "bold"),
             justify="center",
             bg="#fdfdfc",
-            fg="#1b1b1b",
+            fg="#1a3f7a",
         )
 
         self.result_rr_label = tk.Label(
@@ -95,29 +97,37 @@ class RollCoasterApp:
             font=("Helvetica", 22, "bold"),
             justify="center",
             bg="#fdfdfc",
-            fg="#3b3b3b",
+            fg="#1a3f7a",
         )
 
         # Transparent-like log: no border and same color as coaster center.
         self.log_text = tk.Text(
             self.canvas,
-            height=6,
-            wrap=tk.WORD,
+            height=8,
+            wrap=tk.NONE,
             state=tk.DISABLED,
             bg="#fdfdfc",
-            fg="#2c2c2c",
+            fg="#3c3c3c",
             relief=tk.FLAT,
             borderwidth=0,
             highlightthickness=0,
-            font=("Helvetica", 13),
+            font="TkFixedFont",
         )
+        self.log_text.tag_configure("dots", foreground="#c4c4c4")
 
         self.entry_window = self.canvas.create_window(0, 0, window=self.entry, width=460)
         self.go_button_window = self.canvas.create_window(0, 0, window=self.go_button)
         self.headline_window = self.canvas.create_window(0, 0, window=self.headline_label)
         self.result_window = self.canvas.create_window(0, 0, window=self.result_label)
         self.result_rr_window = self.canvas.create_window(0, 0, window=self.result_rr_label)
-        self.log_window = self.canvas.create_window(0, 0, window=self.log_text, width=640, height=130)
+        self.log_window = self.canvas.create_window(
+            0,
+            0,
+            window=self.log_text,
+            width=640,
+            height=130,
+            anchor=tk.CENTER,
+        )
 
         self.canvas.bind("<Configure>", self._on_canvas_configure)
         self.root.bind("<Configure>", self._on_root_resize, add="+")
@@ -239,14 +249,14 @@ class RollCoasterApp:
         center_x = x1 + coaster_w / 2
 
         entry_y = y1 + coaster_h * 0.29
-        headline_y = entry_y - (coaster_h * 0.12)
+        headline_y = entry_y - (coaster_h * 0.15)
         result_y = y1 + coaster_h * 0.60
         result_rr_y = y1 + coaster_h * 0.70
         log_y = y1 + coaster_h * 0.86
 
         self.canvas.coords(self.headline_window, center_x, headline_y)
-        headline_font_size = max(24, int(min(width, height) * 0.046))
-        self.headline_label.configure(font=("Helvetica", headline_font_size, "bold"))
+        headline_font_size = max(42, int(min(width, height) * 0.1))
+        self.headline_label.configure(font=("Impact", headline_font_size))
 
         self.canvas.coords(self.entry_window, center_x, entry_y)
         self.canvas.itemconfigure(self.entry_window, width=min(620, int(coaster_w * 0.68)))
@@ -262,9 +272,10 @@ class RollCoasterApp:
         self.result_rr_label.configure(font=("Helvetica", rr_font_size, "bold"))
 
         self.canvas.coords(self.log_window, center_x, log_y)
+        log_width = min(640, int(coaster_w * 0.68))
         self.canvas.itemconfigure(
             self.log_window,
-            width=min(700, int(coaster_w * 0.78)),
+            width=log_width,
             height=max(90, int(coaster_h * 0.17)),
         )
 
@@ -332,18 +343,25 @@ class RollCoasterApp:
         base = result.final_probability
         rr1 = result.probability_with_global_rerolls(1)
         rr2 = result.probability_with_global_rerolls(2)
-        self.result_main_var.set(f"{base:.2%}")
-        self.result_rr_var.set(f"({rr1:.2%} / {rr2:.2%})")
+        self.result_main_var.set(f"{base:.1%}")
+        self.result_rr_var.set(f"({rr1:.1%} / {rr2:.1%})")
         self._append_log(self._format_log_entry(result))
         self._focus_and_select_entry()
 
     def _format_log_entry(self, result: CalculationResult) -> str:
-        """Return compact log lines like: 2+ 2+ 3++: 55.56% (66.67% / 72.22%)."""
+        """Return a dot-leader log line with left sequence and right-aligned result."""
         sequence = " ".join(target.token for target in result.sequence)
         base = result.final_probability
         rr1 = result.probability_with_global_rerolls(1)
         rr2 = result.probability_with_global_rerolls(2)
-        return f"{sequence}: {base:.2%} ({rr1:.2%} / {rr2:.2%})"
+        result_str = f"{base:.1%} ({rr1:.1%} / {rr2:.1%})"
+
+        font = tkfont.nametofont(self.log_text.cget("font"))
+        log_width_px = max(1, self.log_text.winfo_width() - 12)
+        char_width_px = max(1, font.measure("0"))
+        total_width = max(48, int(log_width_px / char_width_px)-8)
+        dots = max(6, total_width - len(sequence) - len(result_str))
+        return f"{sequence} {'.' * dots} {result_str}"
 
     def _append_log(self, message: str) -> None:
         """Append to log and keep only the latest lines."""
@@ -351,7 +369,17 @@ class RollCoasterApp:
         self.log_lines = self.log_lines[-7:]
         self.log_text.configure(state=tk.NORMAL)
         self.log_text.delete("1.0", tk.END)
-        self.log_text.insert(tk.END, "\n".join(self.log_lines))
+        for index, line in enumerate(self.log_lines):
+            match = re.search(r"\.{3,}", line)
+            if match is None:
+                self.log_text.insert(tk.END, line)
+            else:
+                self.log_text.insert(tk.END, line[: match.start()])
+                self.log_text.insert(tk.END, line[match.start() : match.end()], "dots")
+                self.log_text.insert(tk.END, line[match.end() :])
+
+            if index < len(self.log_lines) - 1:
+                self.log_text.insert(tk.END, "\n")
         self.log_text.configure(state=tk.DISABLED)
 
     def _focus_and_select_entry(self) -> None:
