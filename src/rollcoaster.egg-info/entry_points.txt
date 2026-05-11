@@ -1,0 +1,2 @@
+[console_scripts]
+rollcoaster = rollcoaster.main:main

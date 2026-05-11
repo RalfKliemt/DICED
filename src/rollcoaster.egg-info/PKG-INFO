@@ -1,0 +1,40 @@
+Metadata-Version: 2.4
+Name: rollcoaster
+Version: 0.1.0
+Summary: Success chance calculator for chained dice rolls
+Author: GitHub Copilot
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+
+# RollCoaster
+
+Small Python app for calculating the success chance of consecutive dice rolls on a D6.
+
+Example sequence:
+
+- `2+, 3+, 4+`
+
+The app calculates:
+
+- per-roll success chance
+- cumulative success chance after each step
+- a simple visible log of calculations in the GUI
+
+## Run
+
+```bash
+python app.py
+```
+
+If you install the project in editable mode:
+
+```bash
+pip install -e .
+python -m rollcoaster
+```
+
+## Test
+
+```bash
+PYTHONPATH=src python -m unittest discover -s tests
+```

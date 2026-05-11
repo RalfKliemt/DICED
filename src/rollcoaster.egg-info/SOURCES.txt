@@ -1,0 +1,13 @@
+README.md
+pyproject.toml
+src/rollcoaster/__init__.py
+src/rollcoaster/__main__.py
+src/rollcoaster/core.py
+src/rollcoaster/gui.py
+src/rollcoaster/main.py
+src/rollcoaster.egg-info/PKG-INFO
+src/rollcoaster.egg-info/SOURCES.txt
+src/rollcoaster.egg-info/dependency_links.txt
+src/rollcoaster.egg-info/entry_points.txt
+src/rollcoaster.egg-info/top_level.txt
+tests/test_core.py
