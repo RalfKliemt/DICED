@@ -5,9 +5,25 @@ from __future__ import annotations
 import re
 import tkinter as tk
 import tkinter.font as tkfont
+from tkinter import messagebox
 from typing import Any
 
 from .core import CalculationResult, RollSequenceCalculator, parse_roll_sequence
+
+
+SYNTAX_HELP_TEXT = (
+    "Connected 1 die rolls. The lower results are with 1 and 2 rerolls.\n\n"
+    "- 2+ means a normal D6 roll succeeding on 2 or higher.\n"
+    "- 3++ means a 3+ roll with one built-in reroll for that die.\n"
+    "- You can leave out whitespace and + entirely, e.g. 2+3++4 and 23++4 both mean 2+ 3++ 4+.\n"
+    "- p adds a 2/3 reroll chance on that die.\n\n"
+    "Block dice:\n"
+    "- 1d, 2d, 3d, -2d, -3d succeed on pow/pow*.\n"
+    "- Add + (Block), - (Push), * (Pow only), / (Push only).\n"
+    "- a9 or av9 is a 2D6 armor-break check.\n"
+    "- Injury suffixes: k (KO), i (Injury), s (Stunty), m (Mighty Blow).\n\n"
+    "Example: 2+ 4+ 12d+ av9im for an Ogre with Block to activate, dodge & injure a lone Human Lineman"
+)
 
 
 class DicedApp:
@@ -17,7 +33,15 @@ class DicedApp:
         self.root = root
         self.root.title("DICED")
         self.root.geometry("640x640")
-        self.root.minsize(512, 512)
+        self.root.minsize(640, 640)
+        self.root.maxsize(640, 640)
+
+        # Match the fixed-size web layout.
+        self.canvas_size = 620
+        self.coaster_size = 584
+        self.coaster_radius = 52
+        self.shadow_dx = 10
+        self.shadow_dy = 12
 
         self.calculator = RollSequenceCalculator()
         self.sequence_var = tk.StringVar(value="3++")
@@ -37,23 +61,24 @@ class DicedApp:
         self.canvas_host.pack(fill=tk.BOTH, expand=True)
 
         self.canvas = tk.Canvas(self.canvas_host, highlightthickness=0, bg="#e8e1d3", bd=0)
-        self.canvas.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
+        self.canvas.place(relx=0.5, rely=0.5, anchor=tk.CENTER, width=self.canvas_size, height=self.canvas_size)
 
         self.entry = tk.Entry(
             self.canvas,
             textvariable=self.sequence_var,
-            justify="center",
-            font=("Helvetica", 22, "bold"),
+            justify="left",
+            font=("Helvetica", 20, ""),
             bd=0,
             # Tk Entry cannot be truly alpha-transparent, so this uses a near-
             # coaster tone to create an ~80% transparent visual effect.
-            bg="#f8f8f7",
+            bg="#ececec",
             highlightthickness=0,
             highlightbackground="#f8f8f7",
             highlightcolor="#587089",
             relief=tk.FLAT,
             fg="#1d1d1d",
             insertbackground="#1d1d1d",
+            insertwidth=2,
         )
         self.entry.bind("<Return>", self._handle_entry_return)
         self.entry.bind("<KP_Enter>", self._handle_entry_return)
@@ -67,17 +92,32 @@ class DicedApp:
             fg="#1a1a1a",
             activebackground="#ffc95e",
             activeforeground="#111111",
-            relief=tk.RAISED,
-            bd=1,
-            padx=14,
-            pady=5,
-            cursor="hand2",
+            # relief=tk.RAISED,
+            bd=0,
+            padx=8,
+            pady=4,
+            # cursor="hand1",
+        )
+
+        self.help_button = tk.Button(
+            self.canvas,
+            text="?",
+            command=self.show_syntax_help,
+            font=("Helvetica", 12, "bold"),
+            bg="#f2b84a",
+            fg="#1a1a1a",
+            activebackground="#ffc95e",
+            activeforeground="#111111",
+            # relief=tk.RAISED,
+            bd=0,
+            padx=0,
+            pady=4,
         )
 
         self.headline_label = tk.Label(
             self.canvas,
             text="DICED",
-            font=("Impact", 32),
+            font=("Impact", 86),
             bg="#fdfdfc",
             fg="#7a1515",
         )
@@ -85,7 +125,7 @@ class DicedApp:
         self.result_label = tk.Label(
             self.canvas,
             textvariable=self.result_main_var,
-            font=("Helvetica", 48, "bold"),
+            font=("Helvetica", 64, "bold"),
             justify="center",
             bg="#fdfdfc",
             fg="#1a3f7a",
@@ -94,7 +134,7 @@ class DicedApp:
         self.result_rr_label = tk.Label(
             self.canvas,
             textvariable=self.result_rr_var,
-            font=("Helvetica", 22, "bold"),
+            font=("Helvetica", 24, "bold"),
             justify="center",
             bg="#fdfdfc",
             fg="#1a3f7a",
@@ -105,18 +145,19 @@ class DicedApp:
             self.canvas,
             height=8,
             wrap=tk.NONE,
-            state=tk.DISABLED,
+            # state=tk.DISABLED,
             bg="#fdfdfc",
             fg="#3c3c3c",
             relief=tk.FLAT,
             borderwidth=0,
             highlightthickness=0,
-            font="TkFixedFont",
+            font=("Menlo", 12),
         )
         self.log_text.tag_configure("dots", foreground="#c4c4c4")
 
         self.entry_window = self.canvas.create_window(0, 0, window=self.entry, width=460)
         self.go_button_window = self.canvas.create_window(0, 0, window=self.go_button)
+        self.help_button_window = self.canvas.create_window(0, 0, window=self.help_button)
         self.headline_window = self.canvas.create_window(0, 0, window=self.headline_label)
         self.result_window = self.canvas.create_window(0, 0, window=self.result_label)
         self.result_rr_window = self.canvas.create_window(0, 0, window=self.result_rr_label)
@@ -124,18 +165,17 @@ class DicedApp:
             0,
             0,
             window=self.log_text,
-            width=640,
-            height=130,
+            width=532,
+            height=156,
             anchor=tk.CENTER,
         )
 
         self.canvas.bind("<Configure>", self._on_canvas_configure)
-        self.root.bind("<Configure>", self._on_root_resize, add="+")
+        self._on_root_resize(None)
 
     def _on_root_resize(self, _event: tk.Event) -> None:
         """Keep the canvas square and centered inside the window."""
-        size = max(320, min(self.root.winfo_width(), self.root.winfo_height()) - 18)
-        self.canvas.place_configure(width=size, height=size)
+        self.canvas.place_configure(width=self.canvas_size, height=self.canvas_size)
 
     def _on_canvas_configure(self, event: tk.Event) -> None:
         """Redraw background and keep widgets anchored to coaster-relative zones."""
@@ -145,23 +185,22 @@ class DicedApp:
         self._position_widgets(width, height)
 
     def _draw_background(self, width: int, height: int) -> None:
-        """Paint a large rounded white coaster with a subtle block-dice watermark."""
+        """Paint a large rounded white coaster matching the web layout."""
         self.canvas.delete("bg")
 
-        margin = max(20, int(min(width, height) * 0.05))
-        x1 = margin
-        y1 = margin
-        x2 = width - margin
-        y2 = height - margin
-        radius = max(36, int(min(width, height) * 0.08))
+        x1 = (width - self.coaster_size) / 2
+        y1 = (height - self.coaster_size) / 2
+        x2 = x1 + self.coaster_size
+        y2 = y1 + self.coaster_size
+        radius = self.coaster_radius
 
         self.canvas.create_rectangle(0, 0, width, height, fill="#e8e1d3", outline="", tags="bg")
         self._create_rounded_rect(
             self.canvas,
-            x1 + 8,
-            y1 + 12,
-            x2 + 8,
-            y2 + 12,
+            x1 + self.shadow_dx,
+            y1 + self.shadow_dy,
+            x2 + self.shadow_dx,
+            y2 + self.shadow_dy,
             radius,
             fill="#d9cfbe",
             outline="",
@@ -180,103 +219,38 @@ class DicedApp:
             tags="bg",
         )
 
-        cx = (x1 + x2) / 2
-        cy = y1 + (y2 - y1) * 0.48
-        self._draw_watermark(cx, cy, min(width, height), "bg")
-
         self._coaster_bounds = (x1, y1, x2, y2)
-
-    def _draw_watermark(self, cx: float, cy: float, size_ref: int, tag: str) -> None:
-        """Draw a faded dice watermark."""
-        dice = max(42, int(size_ref * 0.08))
-        gap = int(dice * 0.35)
-
-        positions = [
-            (cx - dice - gap, cy - int(dice * 0.45), 1),
-            (cx, cy - int(dice * 0.6), 6),
-            (cx + dice + gap, cy - int(dice * 0.35), 4),
-        ]
-
-        for px, py, pips in positions:
-            self._create_rounded_rect(
-                self.canvas,
-                px - dice / 2,
-                py - dice / 2,
-                px + dice / 2,
-                py + dice / 2,
-                dice * 0.18,
-                fill="#d9d9d9",
-                outline="",
-                tags=tag,
-            )
-            self._draw_pips(px, py, dice, pips, tag)
-
-    def _draw_pips(self, cx: float, cy: float, size: int, pips: int, tag: str) -> None:
-        """Draw pip patterns used by the watermark dice."""
-        r = max(3, int(size * 0.06))
-        offset = int(size * 0.17)
-        wide_offset = int(size * 0.22)
-        pip_sets = {
-            1: [(0, 0)],
-            2: [(-offset, -offset), (offset, offset)],
-            3: [(-offset, -offset), (0, 0), (offset, offset)],
-            4: [(-wide_offset, -wide_offset), (wide_offset, -wide_offset), (-wide_offset, wide_offset), (wide_offset, wide_offset)],
-            6: [
-                (-wide_offset, -wide_offset),
-                (wide_offset, -wide_offset),
-                (-wide_offset, 0),
-                (wide_offset, 0),
-                (-wide_offset, wide_offset),
-                (wide_offset, wide_offset),
-            ],
-        }
-        for dx, dy in pip_sets[pips]:
-            self.canvas.create_oval(
-                cx + dx - r,
-                cy + dy - r,
-                cx + dx + r,
-                cy + dy + r,
-                fill="#f4f4f4",
-                outline="",
-                tags=tag,
-            )
 
     def _position_widgets(self, width: int, height: int) -> None:
         """Place entry, results, and log according to coaster-relative fractions."""
         x1, y1, x2, y2 = self._coaster_bounds
         coaster_w = x2 - x1
-        coaster_h = y2 - y1
         center_x = x1 + coaster_w / 2
 
-        entry_y = y1 + coaster_h * 0.29
-        headline_y = entry_y - (coaster_h * 0.15)
-        result_y = y1 + coaster_h * 0.60
-        result_rr_y = y1 + coaster_h * 0.70
-        log_y = y1 + coaster_h * 0.86
+        # These fixed positions mirror the web layout's 584px coaster grid.
+        headline_y = y1 + 80
+        entry_y = y1 + 176
+        result_y = y1 + 256
+        result_rr_y = result_y + 64
+        log_y = result_rr_y + 128 + 32
 
         self.canvas.coords(self.headline_window, center_x, headline_y)
-        headline_font_size = max(42, int(min(width, height) * 0.1))
-        self.headline_label.configure(font=("Impact", headline_font_size))
 
         self.canvas.coords(self.entry_window, center_x, entry_y)
-        self.canvas.itemconfigure(self.entry_window, width=min(620, int(coaster_w * 0.68)))
-        entry_width = min(620, int(coaster_w * 0.68))
-        self.canvas.coords(self.go_button_window, center_x + (entry_width / 2) - 40, entry_y)
+        entry_width = 394
+        self.canvas.itemconfigure(self.entry_window, width=entry_width)
+        self.canvas.coords(self.go_button_window, center_x + (entry_width / 2) - 74, entry_y)
+        self.canvas.coords(self.help_button_window, center_x + (entry_width / 2) - 18, entry_y)
 
         self.canvas.coords(self.result_window, center_x, result_y)
-        result_font_size = max(44, int(min(width, height) * 0.082))
-        self.result_label.configure(font=("Helvetica", result_font_size, "bold"))
 
         self.canvas.coords(self.result_rr_window, center_x, result_rr_y)
-        rr_font_size = max(18, int(result_font_size * 0.42))
-        self.result_rr_label.configure(font=("Helvetica", rr_font_size, "bold"))
 
         self.canvas.coords(self.log_window, center_x, log_y)
-        log_width = min(640, int(coaster_w * 0.68))
         self.canvas.itemconfigure(
             self.log_window,
-            width=log_width,
-            height=max(90, int(coaster_h * 0.17)),
+            width=512,
+            height=156,
         )
 
     @staticmethod
@@ -326,6 +300,10 @@ class DicedApp:
         self.calculate()
         return "break"
 
+    def show_syntax_help(self) -> None:
+        """Show a compact syntax reference dialog."""
+        messagebox.showinfo("DICED Syntax Help", SYNTAX_HELP_TEXT, parent=self.root)
+
     def calculate(self) -> None:
         """Parse input and refresh large result text and compact log."""
         raw_sequence = self.sequence_var.get().strip()
@@ -335,7 +313,7 @@ class DicedApp:
             result = self.calculator.calculate(sequence)
         except ValueError as error:
             self.result_main_var.set("-%")
-            self.result_rr_var.set("(-% / -%)")
+            self.result_rr_var.set("-% / -%")
             self._append_log(f"{raw_sequence}: ERROR ({error})")
             self._focus_and_select_entry()
             return
@@ -344,7 +322,7 @@ class DicedApp:
         rr1 = result.probability_with_global_rerolls(1)
         rr2 = result.probability_with_global_rerolls(2)
         self.result_main_var.set(f"{base:.1%}")
-        self.result_rr_var.set(f"({rr1:.1%} / {rr2:.1%})")
+        self.result_rr_var.set(f"{rr1:.1%} / {rr2:.1%}")
         self._append_log(self._format_log_entry(result))
         self._focus_and_select_entry()
 
@@ -356,7 +334,7 @@ class DicedApp:
         rr2 = result.probability_with_global_rerolls(2)
         result_str = f"{base:.1%} ({rr1:.1%} / {rr2:.1%})"
 
-        font = tkfont.nametofont(self.log_text.cget("font"))
+        font = tkfont.Font(font=self.log_text.cget("font"))
         log_width_px = max(1, self.log_text.winfo_width() - 12)
         char_width_px = max(1, font.measure("0"))
         total_width = max(48, int(log_width_px / char_width_px)-8)
