@@ -1,2 +1,3 @@
 [console_scripts]
 rollcoaster = rollcoaster.main:main
+rollcoaster-web = rollcoaster.web:main

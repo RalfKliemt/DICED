@@ -82,6 +82,73 @@ pip install -e .
 python -m rollcoaster
 ```
 
+## macOS App Bundle
+
+You can build a small native `.app` bundle for macOS directly from this repo.
+
+```bash
+python setup_mac.py
+```
+
+This creates `dist/RollCoaster.app`.
+
+Run it from Finder (double-click), or from Terminal:
+
+```bash
+open dist/RollCoaster.app
+```
+
+## Web Version
+
+The project also includes a Flask frontend that reuses the same parsing and
+probability engine.
+
+Local run:
+
+```bash
+pip install -e .
+python webapp.py
+```
+
+Or via the console script:
+
+```bash
+pip install -e .
+rollcoaster-web
+```
+
+Open http://127.0.0.1:5000/ and enter a sequence such as `224s3`.
+
+## PythonAnywhere
+
+The clean deployment path is to keep your existing PythonAnywhere site and point
+ its WSGI config at this project.
+
+Example WSGI file body:
+
+```python
+import sys
+from pathlib import Path
+
+project_home = Path("/home/yourusername/RollCoaster")
+src_dir = project_home / "src"
+
+if str(project_home) not in sys.path:
+	sys.path.insert(0, str(project_home))
+if str(src_dir) not in sys.path:
+	sys.path.insert(0, str(src_dir))
+
+from rollcoaster.web import app as application
+```
+
+Typical setup steps:
+
+- clone or upload this project into your PythonAnywhere home directory
+- create a virtualenv for the site and install the project with `pip install -e .`
+- open the Web tab and set the virtualenv path for your site
+- replace the default WSGI file contents with the snippet above
+- reload the web app from the PythonAnywhere dashboard
+
 ## Test
 
 ```bash

@@ -1,0 +1,4 @@
+flask<4,>=3
+
+[macapp]
+py2app<1,>=0.28

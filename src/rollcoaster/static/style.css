@@ -1,0 +1,350 @@
+:root {
+  --page: #e8e1d3;
+  --coaster: #fdfdfc;
+  --shadow: #d9cfbe;
+  --line: #d6d6d6;
+  --ink: #1d1d1d;
+  --accent: #7a1515;
+  --blue: #1a3f7a;
+  --button: #f2b84a;
+  --button-hover: #ffc95e;
+  --muted: #3c3c3c;
+  --dots: #c4c4c4;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: Helvetica, Arial, sans-serif;
+  color: var(--ink);
+  background: var(--page);
+}
+
+a {
+  color: inherit;
+}
+
+.page-shell {
+  min-height: 100vh;
+}
+
+.stage {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.coaster-shadow,
+.coaster {
+  grid-area: 1 / 1;
+  width: min(92vmin, 760px);
+  aspect-ratio: 1;
+  border-radius: 9%;
+}
+
+.coaster-shadow {
+  transform: translate(10px, 12px);
+  background: var(--shadow);
+}
+
+.coaster {
+  position: relative;
+  display: grid;
+  grid-template-rows: 0.16fr 0.2fr 0.34fr 0.3fr;
+  background: var(--coaster);
+  border: 2px solid var(--line);
+  overflow: hidden;
+  padding: 4.5% 6%;
+  box-shadow: 0 4px 0 rgba(255, 255, 255, 0.45) inset;
+}
+
+.watermark {
+  position: absolute;
+  opacity: 0.62;
+}
+
+.watermark-left {
+  left: 26%;
+  top: 37%;
+}
+
+.watermark-center {
+  left: 50%;
+  top: 33%;
+  transform: translateX(-50%);
+}
+
+.watermark-right {
+  right: 23%;
+  top: 39%;
+}
+
+.die {
+  position: relative;
+  display: block;
+  width: clamp(54px, 7.6vmin, 72px);
+  height: clamp(54px, 7.6vmin, 72px);
+  border-radius: 18%;
+  background: #d9d9d9;
+}
+
+.die::before,
+.die::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
+}
+
+.die.one::before {
+  background-image: radial-gradient(circle, #f4f4f4 0 18%, transparent 20%);
+  background-position: center;
+  background-size: 24% 24%;
+}
+
+.die.four::before {
+  background-image:
+    radial-gradient(circle, #f4f4f4 0 14%, transparent 16%),
+    radial-gradient(circle, #f4f4f4 0 14%, transparent 16%),
+    radial-gradient(circle, #f4f4f4 0 14%, transparent 16%),
+    radial-gradient(circle, #f4f4f4 0 14%, transparent 16%);
+  background-position: 26% 26%, 74% 26%, 26% 74%, 74% 74%;
+  background-size: 20% 20%;
+}
+
+.die.six::before {
+  background-image:
+    radial-gradient(circle, #f4f4f4 0 13%, transparent 15%),
+    radial-gradient(circle, #f4f4f4 0 13%, transparent 15%),
+    radial-gradient(circle, #f4f4f4 0 13%, transparent 15%),
+    radial-gradient(circle, #f4f4f4 0 13%, transparent 15%),
+    radial-gradient(circle, #f4f4f4 0 13%, transparent 15%),
+    radial-gradient(circle, #f4f4f4 0 13%, transparent 15%);
+  background-position: 26% 22%, 74% 22%, 26% 50%, 74% 50%, 26% 78%, 74% 78%;
+  background-size: 19% 19%;
+}
+
+.coaster-header {
+  display: grid;
+  place-items: center;
+  position: relative;
+  z-index: 1;
+}
+
+.coaster-header h1 {
+  margin: 0;
+  font-family: Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif;
+  font-size: clamp(2rem, 5.1vmin, 3.3rem);
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+
+.sequence-form {
+  display: grid;
+  place-items: center;
+  position: relative;
+  z-index: 1;
+}
+
+.entry-wrap {
+  position: relative;
+  width: min(68%, 460px);
+}
+
+.entry-wrap input {
+  width: 100%;
+  height: clamp(50px, 7vmin, 64px);
+  border: 0;
+  border-radius: 16px;
+  background: #f8f8f7;
+  color: var(--ink);
+  text-align: center;
+  font-size: clamp(1.2rem, 3vmin, 1.8rem);
+  font-weight: 700;
+  padding: 0 6.6rem 0 1rem;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.02);
+}
+
+.entry-wrap input:focus {
+  outline: 2px solid #587089;
+  outline-offset: 2px;
+}
+
+.entry-wrap button {
+  position: absolute;
+  right: 0.4rem;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 1px solid #b58b35;
+  border-radius: 11px;
+  padding: 0 0.95rem;
+  height: calc(100% - 0.8rem);
+  background: var(--button);
+  color: #1a1a1a;
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.entry-wrap button:hover {
+  background: var(--button-hover);
+}
+
+.result-zone {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 0.55rem;
+  position: relative;
+  z-index: 1;
+}
+
+.main-result,
+.rr-result,
+.message-line,
+.log-copy,
+th,
+td,
+.example-chip {
+  background: var(--coaster);
+}
+
+.main-result {
+  margin: 0;
+  font-size: clamp(3rem, 8.2vmin, 4.8rem);
+  font-weight: 700;
+  color: var(--blue);
+  line-height: 1;
+}
+
+.rr-result {
+  margin: 0;
+  font-size: clamp(1.2rem, 2.7vmin, 2rem);
+  font-weight: 700;
+  color: var(--blue);
+}
+
+.message-line {
+  margin: 0;
+  max-width: 72%;
+  text-align: center;
+  font-size: clamp(0.88rem, 1.8vmin, 1rem);
+  color: var(--muted);
+}
+
+.error-state .main-result,
+.error-state .rr-result,
+.error-state .message-line {
+  color: var(--accent);
+}
+
+.log-panel {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  align-content: start;
+  width: min(74%, 640px);
+  margin: 0 auto;
+  background: var(--coaster);
+}
+
+.example-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-bottom: 0.55rem;
+}
+
+.example-chip {
+  text-decoration: none;
+  color: var(--muted);
+  font-size: 0.82rem;
+  border-bottom: 1px solid transparent;
+}
+
+.example-chip:hover {
+  border-bottom-color: var(--dots);
+}
+
+.log-copy {
+  margin: 0;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-align: center;
+  color: var(--muted);
+}
+
+.table-wrap {
+  overflow: auto;
+  margin-top: 0.45rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+th,
+td {
+  text-align: center;
+  padding: 0.42rem 0.28rem;
+  border-bottom: 0;
+}
+
+th {
+  position: sticky;
+  top: 0;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+tbody tr td:nth-child(1) {
+  font-weight: 700;
+}
+
+@media (max-width: 800px) {
+  .coaster,
+  .coaster-shadow {
+    width: min(96vmin, 760px);
+  }
+
+  .log-panel {
+    width: min(82%, 640px);
+  }
+}
+
+@media (max-width: 560px) {
+  .stage {
+    padding: 0.4rem;
+  }
+
+  .coaster {
+    grid-template-rows: 0.15fr 0.18fr 0.31fr 0.36fr;
+    padding: 5% 4%;
+  }
+
+  .entry-wrap,
+  .log-panel,
+  .message-line {
+    width: 88%;
+    max-width: none;
+  }
+
+  .example-row {
+    gap: 0.3rem 0.5rem;
+  }
+
+  table {
+    font-size: 0.74rem;
+  }
+}

@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RollCoaster</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+  <body>
+    <div class="page-shell">
+      <main class="stage">
+        <section class="coaster-shadow"></section>
+        <section class="coaster">
+          <div class="watermark watermark-left">
+            <span class="die one"></span>
+          </div>
+          <div class="watermark watermark-center">
+            <span class="die six"></span>
+          </div>
+          <div class="watermark watermark-right">
+            <span class="die four"></span>
+          </div>
+
+          <header class="coaster-header">
+            <h1>ROLLS COASTER</h1>
+          </header>
+
+          <form class="sequence-form" method="get" action="/">
+            <div class="entry-wrap">
+              <input
+                id="sequence"
+                name="sequence"
+                type="text"
+                value="{{ sequence_text }}"
+                placeholder="224s3"
+                autocomplete="off"
+              >
+              <button type="submit">Go!</button>
+            </div>
+          </form>
+
+          {% if error %}
+          <section class="result-zone error-state">
+            <p class="main-result">-%</p>
+            <p class="rr-result">(-% / -%)</p>
+            <p class="message-line">{{ error }}</p>
+          </section>
+          {% elif result %}
+          <section class="result-zone">
+            <p class="main-result">{{ result.base }}</p>
+            <p class="rr-result">{{ result.rr_pair }}</p>
+            <p class="message-line">{{ result.parsed_tokens|join(' ') }}</p>
+          </section>
+          {% else %}
+          <section class="result-zone idle-state">
+            <p class="main-result">-%</p>
+            <p class="rr-result">(-% / -%)</p>
+            <p class="message-line">Type a chain like 3++ or 224s3</p>
+          </section>
+          {% endif %}
+
+          <section class="log-panel">
+            <div class="example-row">
+              {% for example in examples %}
+              <a class="example-chip" href="/?sequence={{ example|urlencode }}">{{ example }}</a>
+              {% endfor %}
+            </div>
+
+            {% if result %}
+            <div class="log-copy">Step Breakdown</div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Roll</th>
+                    <th>Single</th>
+                    <th>Built-in</th>
+                    <th>Base</th>
+                    <th>1RR</th>
+                    <th>2RR</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for step in result.steps %}
+                  <tr>
+                    <td>{{ step.token }}</td>
+                    <td>{{ step.single_attempt }}</td>
+                    <td>{{ step.built_in }}</td>
+                    <td>{{ step.base }}</td>
+                    <td>{{ step.rr1 }}</td>
+                    <td>{{ step.rr2 }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% else %}
+            <div class="log-copy">Base / 1RR / 2RR appear here after a calculation.</div>
+            {% endif %}
+          </section>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
