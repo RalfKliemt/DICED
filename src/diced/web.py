@@ -46,7 +46,7 @@ def build_result_view(result: CalculationResult) -> dict[str, object]:
         "base": base,
         "rr1": rr1,
         "rr2": rr2,
-        "rr_pair": f"({rr1} / {rr2})",
+        "rr_pair": f"{rr1} / {rr2}",
         "parsed_tokens": [step.token for step in result.steps],
         "log_line": build_log_line(result),
         "steps": [
