@@ -49,7 +49,7 @@
           </section>
           {% endif %}
 
-          <section class="log-panel" aria-live="polite">
+          <section class="log-panel" id="log-panel" aria-live="polite">
             {% if log_lines %}
             {% for line in log_lines %}
             <p class="log-line">{{ line }}</p>
@@ -64,6 +64,44 @@
     <script>
       document.addEventListener("DOMContentLoaded", function () {
         const input = document.getElementById("sequence");
+        const logPanel = document.getElementById("log-panel");
+        const placeholderText = "Type a chain and press Go! to write a log line here.";
+        const currentLine = {{ (result.log_line if result else (sequence_text ~ ': ERROR (' ~ error ~ ')' if error else '')) | tojson }};
+
+        if (logPanel) {
+          let persistedLines = [];
+          try {
+            const parsed = JSON.parse(window.name || "{}");
+            if (Array.isArray(parsed.dicedLogLines)) {
+              persistedLines = parsed.dicedLogLines;
+            }
+          } catch (_error) {
+            persistedLines = [];
+          }
+
+          if (currentLine) {
+            persistedLines.push(currentLine);
+            persistedLines = persistedLines.slice(-7);
+          }
+
+          window.name = JSON.stringify({ dicedLogLines: persistedLines });
+          logPanel.innerHTML = "";
+
+          if (persistedLines.length === 0) {
+            const p = document.createElement("p");
+            p.className = "log-line placeholder-line";
+            p.textContent = placeholderText;
+            logPanel.appendChild(p);
+          } else {
+            for (const line of persistedLines) {
+              const p = document.createElement("p");
+              p.className = "log-line";
+              p.textContent = line;
+              logPanel.appendChild(p);
+            }
+          }
+        }
+
         if (!input) {
           return;
         }
