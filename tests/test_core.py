@@ -178,6 +178,55 @@ class ParseRollSequenceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_roll_sequence("av9s")
 
+    def test_parses_weighted_reroll_suffix(self) -> None:
+        self.assertEqual(
+            parse_roll_sequence("3+p"),
+            [RollTarget(threshold=3, local_rerolls=0, weighted_reroll=True)],
+        )
+
+    def test_parses_multiple_weighted_rerolls_in_chain(self) -> None:
+        self.assertEqual(
+            parse_roll_sequence("2+p 4+p 5+"),
+            [
+                RollTarget(threshold=2, local_rerolls=0, weighted_reroll=True),
+                RollTarget(threshold=4, local_rerolls=0, weighted_reroll=True),
+                RollTarget(threshold=5, local_rerolls=0),
+            ],
+        )
+
+    def test_rejects_weighted_reroll_with_normal_reroll(self) -> None:
+        with self.assertRaises(ValueError):
+            parse_roll_sequence("3++p")
+
+    def test_parses_weighted_reroll_short_form(self) -> None:
+        # Short form: 3p is equivalent to 3+p
+        self.assertEqual(
+            parse_roll_sequence("3p"),
+            [RollTarget(threshold=3, local_rerolls=0, weighted_reroll=True)],
+        )
+
+    def test_parses_mixed_weighted_reroll_forms(self) -> None:
+        # Mix short form (3p) and long form (4+p)
+        self.assertEqual(
+            parse_roll_sequence("3p 4+p 5p"),
+            [
+                RollTarget(threshold=3, local_rerolls=0, weighted_reroll=True),
+                RollTarget(threshold=4, local_rerolls=0, weighted_reroll=True),
+                RollTarget(threshold=5, local_rerolls=0, weighted_reroll=True),
+            ],
+        )
+
+    def test_parses_compact_weighted_reroll_short_form(self) -> None:
+        # Compact notation with short form: 3p2p4p
+        self.assertEqual(
+            parse_roll_sequence("3p2p4p"),
+            [
+                RollTarget(threshold=3, local_rerolls=0, weighted_reroll=True),
+                RollTarget(threshold=2, local_rerolls=0, weighted_reroll=True),
+                RollTarget(threshold=4, local_rerolls=0, weighted_reroll=True),
+            ],
+        )
+
 
 class RollSequenceCalculatorTests(unittest.TestCase):
     """Verify the calculator returns correct probabilities for common cases."""
@@ -208,6 +257,33 @@ class RollSequenceCalculatorTests(unittest.TestCase):
     def test_rejects_invalid_threshold(self) -> None:
         with self.assertRaises(ValueError):
             RollSequenceCalculator().calculate([RollTarget(threshold=7, local_rerolls=0)])
+
+    def test_weighted_reroll_probability(self) -> None:
+        # 3+p: first attempt 4/6, fail 2/6; reroll at 2/3
+        # total: 4/6 + 2/6 * 2/3 = 4/6 + 4/18 = 12/18 + 4/18 = 16/18
+        result = RollSequenceCalculator().calculate(parse_roll_sequence("3+p"))
+        expected = (4 / 6) + (2 / 6) * (2 / 3)
+        self.assertAlmostEqual(result.steps[0].roll_probability, expected)
+        self.assertAlmostEqual(result.final_probability, expected)
+
+    def test_weighted_reroll_does_not_consume_shared_rr(self) -> None:
+        # 3+p should have identical probability across base/1RR/2RR
+        result = RollSequenceCalculator().calculate(parse_roll_sequence("3+p"), max_global_rerolls=2)
+        expected = (4 / 6) + (2 / 6) * (2 / 3)
+        self.assertAlmostEqual(result.probability_with_global_rerolls(0), expected)
+        self.assertAlmostEqual(result.probability_with_global_rerolls(1), expected)
+        self.assertAlmostEqual(result.probability_with_global_rerolls(2), expected)
+
+    def test_mixed_chain_with_weighted_and_normal_rerolls(self) -> None:
+        # 2+ (5/6) then 3+p (16/18) then 4+ (3/6)
+        result = RollSequenceCalculator().calculate(parse_roll_sequence("2+ 3+p 4+"))
+        expected = (5 / 6) * ((4 / 6) + (2 / 6) * (2 / 3)) * (3 / 6)
+        self.assertAlmostEqual(result.final_probability, expected)
+
+    def test_weighted_reroll_display_token(self) -> None:
+        # Verify that display_token shows "(pro)" label
+        targets = parse_roll_sequence("3+p")
+        self.assertEqual(targets[0].display_token, "3+ (pro)")
 
 
 class BlockDiceProbabilityTests(unittest.TestCase):

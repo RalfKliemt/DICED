@@ -41,6 +41,26 @@ Examples:
 
 The order matters because the chain succeeds only if every step succeeds.
 
+**Weighted reroll suffix (`p`)**
+
+The `p` suffix provides a 2/3 success probability on the reroll attempt, modeling certain special abilities or favorable conditions. Displayed as `(pro)` in logs.
+
+- `3+p` or `3p` means: roll 3+, and if failed, reroll at 2/3 chance (short form `3p` is equivalent to `3+p`)
+- Formula: P(success on first) + P(fail first) × (2/3)
+- Example probabilities:
+  - `3+p`: (4/6) + (2/6) × (2/3) = 16/18 ≈ 88.89%
+  - `4+p`: (3/6) + (3/6) × (2/3) = 15/18 ≈ 83.33%
+  - `5+p`: (2/6) + (4/6) × (2/3) = 14/18 ≈ 77.78%
+
+Note: `p` and `++` cannot be combined on the same die. Each uses its own reroll and consumes no shared RR budget.
+
+Examples:
+
+- `3+p` or `3p` (short form)
+- `2+ 3+p 4+`
+- `2p 3p 4p` (compact short form)
+- `3p2p4p` (compact without spaces)
+
 ## Block Dice
 
 The standard Blood Bowl block die has 6 faces: POW, POW/SKULL, BOTH DOWN, PUSH, PUSH, SKULL.

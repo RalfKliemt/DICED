@@ -26,19 +26,25 @@ class RollTarget:
 
     `threshold` is the minimum D6 face needed to succeed.
     `local_rerolls` is 0 or 1 and counts whether the die has its own reroll.
+    `weighted_reroll` is True if the suffix is `p` (2/3 reroll weight).
     """
 
     threshold: int
     local_rerolls: int
+    weighted_reroll: bool = False
 
     @property
     def token(self) -> str:
-        """Rebuild the user-facing token, for example 3++."""
+        """Rebuild the user-facing token, for example 3++, 3+p."""
+        if self.weighted_reroll:
+            return f"{self.threshold}+p"
         return f"{self.threshold}{'+' * (self.local_rerolls + 1)}"
 
     @property
     def display_token(self) -> str:
         """Return the display token shown in logs and tables."""
+        if self.weighted_reroll:
+            return f"{self.threshold}+ (pro)"
         return self.token
 
 
@@ -434,18 +440,37 @@ def _parse_d6_target_from(text: str, index: int) -> tuple[RollTarget, int]:
 
     threshold = int(text[index])
     local_rerolls = 0
+    weighted_reroll = False
     next_index = index + 1
 
-    if text[next_index : next_index + 2] == "++":
+    # Check for 'p' directly after threshold (e.g., 3p)
+    if next_index < len(text) and text[next_index].lower() == "p":
+        weighted_reroll = True
+        next_index += 1
+    elif text[next_index : next_index + 2] == "++":
         local_rerolls = 1
         next_index += 2
     elif next_index < len(text) and text[next_index] == "+":
         next_index += 1
+        # Check for 'p' suffix after the +
+        if next_index < len(text) and text[next_index].lower() == "p":
+            weighted_reroll = True
+            next_index += 1
     elif next_index < len(text) and text[next_index].lower() == "s":
         local_rerolls = 1
         next_index += 1
 
-    return RollTarget(threshold=threshold, local_rerolls=local_rerolls), next_index
+    if local_rerolls > 0 and weighted_reroll:
+        raise ValueError(
+            f"Cannot use both ++ and p on same die near {text[index:next_index]!r}. "
+            f"Use either 3++ or 3+p, not 3++p."
+        )
+
+    return RollTarget(
+        threshold=threshold,
+        local_rerolls=local_rerolls,
+        weighted_reroll=weighted_reroll,
+    ), next_index
 
 
 def _split_roll_tokens(raw_text: str) -> list[str]:
@@ -649,8 +674,12 @@ class RollSequenceCalculator:
                 roll_probability = 1 - (1 - single_attempt_probability) ** (target.local_rerolls + 1)
                 threshold = None
             else:
+                # RollTarget
                 single_attempt_probability = self.roll_probability(target.threshold)
-                roll_probability = self.roll_probability_with_local_rerolls(target.threshold, target.local_rerolls)
+                if target.weighted_reroll:
+                    roll_probability = self.roll_probability_with_weighted_reroll(target.threshold)
+                else:
+                    roll_probability = self.roll_probability_with_local_rerolls(target.threshold, target.local_rerolls)
                 threshold = target.threshold
             steps.append(
                 StepResult(
@@ -698,13 +727,25 @@ class RollSequenceCalculator:
         return 1 - ((1 - single_attempt_probability) ** (local_rerolls + 1))
 
     @staticmethod
+    def roll_probability_with_weighted_reroll(threshold: int) -> float:
+        """Probability for a die roll with weighted reroll (p suffix).
+
+        First attempt at the threshold, then if failed, reroll at 2/3 probability.
+        Formula: P(success on first) + P(fail first) * (2/3)
+        """
+
+        first_attempt = RollSequenceCalculator.roll_probability(threshold)
+        # If first attempt fails, reroll at fixed 2/3 probability
+        return first_attempt + (1 - first_attempt) * (2 / 3)
+
+    @staticmethod
     def _advance_distribution(distribution: list[float], target: Step) -> list[float]:
         """Advance the shared-reroll state by one roll, block pool, or armor roll.
 
         The current distribution represents successful paths only.
 
-        A step with ++ uses its own reroll and cannot also spend a shared RR.
-        A step without ++ may consume at most one shared RR after a failed first
+        A step with ++ or p uses its own reroll and cannot also spend a shared RR.
+        A step without ++ or p may consume at most one shared RR after a failed first
         attempt. Paths that still fail after that are omitted because the chain ends.
         """
 
@@ -721,6 +762,10 @@ class RollSequenceCalculator:
         if isinstance(target, BlockDiceTarget):
             single_attempt_probability = target.base_probability
             local_roll_probability = 1 - (1 - single_attempt_probability) ** (target.local_rerolls + 1)
+        elif isinstance(target, RollTarget) and target.weighted_reroll:
+            # Weighted reroll uses 2/3 success on the reroll attempt
+            single_attempt_probability = RollSequenceCalculator.roll_probability(target.threshold)
+            local_roll_probability = RollSequenceCalculator.roll_probability_with_weighted_reroll(target.threshold)
         else:
             single_attempt_probability = RollSequenceCalculator.roll_probability(target.threshold)
             local_roll_probability = RollSequenceCalculator.roll_probability_with_local_rerolls(
@@ -732,7 +777,8 @@ class RollSequenceCalculator:
             if state_probability == 0:
                 continue
 
-            if target.local_rerolls == 1:
+            # Both ++ and p reroll are treated the same: use local reroll probability
+            if target.local_rerolls == 1 or (isinstance(target, RollTarget) and target.weighted_reroll):
                 next_distribution[rerolls_remaining] += state_probability * local_roll_probability
                 continue
 
