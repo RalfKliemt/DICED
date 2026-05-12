@@ -8,11 +8,15 @@ version = "0.1.0"
 description = "Success chance calculator for chained dice rolls"
 readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "GPL-3.0-or-later" }
 dependencies = [
     "flask>=3,<4",
 ]
 authors = [
-    { name = "GitHub Copilot" }
+    { name = "ralfk" }
+]
+classifiers = [
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
 ]
 
 [project.scripts]
