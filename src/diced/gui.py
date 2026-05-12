@@ -10,12 +10,12 @@ from typing import Any
 from .core import CalculationResult, RollSequenceCalculator, parse_roll_sequence
 
 
-class RollCoasterApp:
+class DicedApp:
     """Single-canvas coaster UI for the dice sequence calculator."""
 
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("RollCoaster")
+        self.root.title("DICED")
         self.root.geometry("640x640")
         self.root.minsize(512, 512)
 
@@ -76,7 +76,7 @@ class RollCoasterApp:
 
         self.headline_label = tk.Label(
             self.canvas,
-            text="ROLLS COASTER",
+            text="DICED",
             font=("Impact", 32),
             bg="#fdfdfc",
             fg="#7a1515",
@@ -392,5 +392,5 @@ def launch() -> None:
     """Start the Tkinter application and populate it with an initial example."""
 
     root = tk.Tk()
-    app = RollCoasterApp(root)
+    app = DicedApp(root)
     root.mainloop()

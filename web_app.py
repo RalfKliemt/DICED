@@ -1,4 +1,4 @@
-"""WSGI entry point for the RollCoaster web application."""
+"""WSGI entry point for the DICED web application."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from rollcoaster.web import app as application
+from diced.web import app as application
 
 
 if __name__ == "__main__":

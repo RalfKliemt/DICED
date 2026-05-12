@@ -2,7 +2,7 @@
 
 import unittest
 
-from rollcoaster.core import (
+from diced.core import (
     ArmorValueTarget,
     BlockDiceTarget,
     RollSequenceCalculator,
@@ -352,7 +352,7 @@ class ArmorBreakProbabilityTests(unittest.TestCase):
     def test_armor_display_token_is_friendly(self) -> None:
         self.assertEqual(ArmorValueTarget(target=9, injury_suffix="k").display_token, "av9 ko")
         self.assertEqual(ArmorValueTarget(target=9, injury_suffix="i").display_token, "av9 injury")
-        self.assertEqual(ArmorValueTarget(target=9, injury_suffix="ks").display_token, "av9 stunty ko (sk)")
+        self.assertEqual(ArmorValueTarget(target=9, injury_suffix="ks").display_token, "av9 stunty ko")
         self.assertEqual(ArmorValueTarget(target=9, injury_suffix="si").display_token, "av9 stunty injury")
         self.assertEqual(ArmorValueTarget(target=9, injury_suffix="km").display_token, "av9 ko (mb)")
 

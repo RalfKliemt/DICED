@@ -1,4 +1,4 @@
-"""Flask web interface for the RollCoaster calculator."""
+"""Flask web interface for the DICED calculator."""
 
 from __future__ import annotations
 

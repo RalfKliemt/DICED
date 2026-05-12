@@ -2,7 +2,7 @@
 
 import unittest
 
-from rollcoaster.web import create_app, format_percent
+from diced.web import create_app, format_percent
 
 
 class WebInterfaceTests(unittest.TestCase):
@@ -16,12 +16,12 @@ class WebInterfaceTests(unittest.TestCase):
     def test_homepage_loads(self) -> None:
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"RollCoaster", response.data)
+        self.assertIn(b"DICED", response.data)
 
     def test_calculation_results_render(self) -> None:
         response = self.client.get("/", query_string={"sequence": "3++ 4+"})
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"ROLLS COASTER", response.data)
+        self.assertIn(b"DICED", response.data)
         self.assertIn(b"44.44%", response.data)
         self.assertIn(b"(66.67% / 66.67%)", response.data)
         self.assertIn(b"3++ 4+", response.data)

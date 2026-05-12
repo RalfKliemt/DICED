@@ -1,4 +1,4 @@
-# RollCoaster
+# DICED
 
 Small Python app for calculating the success chance of consecutive dice rolls on a D6.
 
@@ -175,7 +175,7 @@ If you install the project in editable mode:
 
 ```bash
 pip install -e .
-python -m rollcoaster
+python -m diced
 ```
 
 ## macOS App Bundle
@@ -186,12 +186,12 @@ You can build a small native `.app` bundle for macOS directly from this repo.
 python setup_mac.py
 ```
 
-This creates `dist/RollCoaster.app`.
+This creates `dist/DICED.app`.
 
 Run it from Finder (double-click), or from Terminal:
 
 ```bash
-open dist/RollCoaster.app
+open dist/DICED.app
 ```
 
 ## Web Version
@@ -203,14 +203,14 @@ Local run:
 
 ```bash
 pip install -e .
-python webapp.py
+python web_app.py
 ```
 
 Or via the console script:
 
 ```bash
 pip install -e .
-rollcoaster-web
+diced-web
 ```
 
 Open <http://127.0.0.1:5000/> and enter a sequence such as `224s3`.
@@ -226,7 +226,7 @@ Example WSGI file body:
 import sys
 from pathlib import Path
 
-project_home = Path("/home/yourusername/RollCoaster")
+project_home = Path("/home/yourusername/DICED")
 src_dir = project_home / "src"
 
 if str(project_home) not in sys.path:
@@ -234,7 +234,7 @@ if str(project_home) not in sys.path:
 if str(src_dir) not in sys.path:
     sys.path.insert(0, str(src_dir))
 
-from rollcoaster.web import app as application
+from diced.web import app as application
 ```
 
 Typical setup steps:

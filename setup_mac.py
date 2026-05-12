@@ -1,4 +1,4 @@
-"""Build a tiny native macOS app bundle for RollCoaster.
+"""Build a tiny native macOS app bundle for DICED.
 
 Usage:
     python setup_mac.py
@@ -13,8 +13,8 @@ import stat
 from pathlib import Path
 
 
-APP_NAME = "RollCoaster"
-BUNDLE_ID = "com.rollcoaster.app"
+APP_NAME = "DICED"
+BUNDLE_ID = "com.diced.app"
 VERSION = "0.1.0"
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -23,8 +23,8 @@ APP_DIR = DIST_DIR / f"{APP_NAME}.app"
 CONTENTS_DIR = APP_DIR / "Contents"
 MACOS_DIR = CONTENTS_DIR / "MacOS"
 RESOURCES_DIR = CONTENTS_DIR / "Resources"
-ICON_FILE = PROJECT_ROOT / "assets" / "RollCoaster.icns"
-ICON_NAME = "RollCoaster.icns"
+ICON_FILE = PROJECT_ROOT / "assets" / "DICED.icns"
+ICON_NAME = "DICED.icns"
 
 
 def _resolve_python() -> str:
@@ -38,7 +38,8 @@ def _resolve_python() -> str:
 def _build_launcher_script(python_path: str) -> str:
     return f"""#!/bin/bash
 set -euo pipefail
-exec \"{python_path}\" \"{(PROJECT_ROOT / 'mac_app.py').as_posix()}\"
+export PYTHONPATH=\"{(PROJECT_ROOT / 'src').as_posix()}:${{PYTHONPATH:-}}\"
+exec \"{python_path}\" -m diced
 """
 
 

@@ -1,1 +1,1 @@
-"""Test package for RollCoaster."""
+"""Test package for DICED."""

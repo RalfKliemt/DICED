@@ -3,7 +3,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "rollcoaster"
+name = "diced"
 version = "0.1.0"
 description = "Success chance calculator for chained dice rolls"
 readme = "README.md"
@@ -20,8 +20,8 @@ classifiers = [
 ]
 
 [project.scripts]
-rollcoaster = "rollcoaster.main:main"
-rollcoaster-web = "rollcoaster.web:main"
+diced = "diced.main:main"
+diced-web = "diced.web:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -30,4 +30,4 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-rollcoaster = ["templates/*.html", "static/*.css"]
+diced = ["templates/*.html", "static/*.css"]
