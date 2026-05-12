@@ -15,7 +15,7 @@ defending player picks, so all dice must show the desired face.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import re
 from typing import Union
 
@@ -35,6 +35,11 @@ class RollTarget:
     def token(self) -> str:
         """Rebuild the user-facing token, for example 3++."""
         return f"{self.threshold}{'+' * (self.local_rerolls + 1)}"
+
+    @property
+    def display_token(self) -> str:
+        """Return the display token shown in logs and tables."""
+        return self.token
 
 
 # ---------------------------------------------------------------------------
@@ -88,6 +93,11 @@ class BlockDiceTarget:
         return f"{sign}{self.dice_count}d{self.outcome}{reroll_marker}"
 
     @property
+    def display_token(self) -> str:
+        """Return the display token shown in logs and tables."""
+        return self.token
+
+    @property
     def base_probability(self) -> float:
         """Pool success probability on a single attempt."""
         p = block_die_single_probability(self.outcome)
@@ -96,7 +106,120 @@ class BlockDiceTarget:
         return 1 - (1 - p) ** self.dice_count
 
 
-Step = Union[RollTarget, BlockDiceTarget]
+@dataclass(frozen=True)
+class ArmorValueTarget:
+    """A 2D6 armor break roll target such as a9, av9k, or av9sim.
+
+    `target` is the minimum 2D6 sum required to succeed.
+    `injury_suffix` optionally encodes a follow-up injury roll target:
+    - k => 8+
+    - i => 10+
+    - ks/sk => 7+
+    - si/is => 9+
+    Adding `m` lowers the injury target by 1.
+    `local_rerolls` is 0 or 1 for consistency with other step types.
+    """
+
+    target: int
+    injury_suffix: str = ""
+    local_rerolls: int = 0
+
+    @property
+    def token(self) -> str:
+        """Rebuild a canonical token, for example av9 or av9ksm."""
+        return f"av{self.target}{self.injury_suffix}"
+
+    @property
+    def display_token(self) -> str:
+        """Return a friendlier label for logs and result tables."""
+
+        if not self.injury_suffix:
+            return f"av{self.target}"
+
+        has_m = self.injury_suffix.endswith("m")
+        core = self.injury_suffix[:-1] if has_m else self.injury_suffix
+        label = {
+            "k": "ko",
+            "i": "injury",
+            "ks": "stunty ko",
+            "si": "stunty injury",
+        }[core]
+        if has_m:
+            label += " (mb)"
+        return f"av{self.target} {label}"
+
+
+def armor_break_probability(target: int) -> float:
+    """Probability that 2D6 is greater than or equal to ``target``."""
+
+    if target < 1 or target > 11:
+        raise ValueError("Armor value target must be between 1 and 11.")
+    successful = sum(1 for die1 in range(1, 7) for die2 in range(1, 7) if die1 + die2 >= target)
+    return successful / 36
+
+
+_INJURY_BASE_TARGETS: dict[str, int] = {
+    "k": 8,
+    "i": 10,
+    "ks": 7,
+    "si": 9,
+}
+
+
+def _normalize_injury_suffix(suffix: str) -> str:
+    """Normalise accepted injury suffix spellings into canonical form.
+
+    Canonical forms are: `k`, `i`, `ks`, `si` with optional trailing `m`.
+    """
+
+    if not suffix:
+        return ""
+
+    lowered = suffix.lower()
+    if any(ch not in "kism" for ch in lowered):
+        raise ValueError(
+            f"Invalid injury suffix: {suffix!r}. Use k, i, ks/sk, si/is, optionally with m."
+        )
+
+    m_count = lowered.count("m")
+    if m_count > 1:
+        raise ValueError(
+            f"Invalid injury suffix: {suffix!r}. 'm' can be used at most once."
+        )
+
+    has_m = m_count == 1
+    core = lowered.replace("m", "")
+    core = {"sk": "ks", "is": "si"}.get(core, core)
+
+    if core not in _INJURY_BASE_TARGETS:
+        raise ValueError(
+            f"Invalid injury suffix: {suffix!r}. Use k, i, ks/sk, si/is, optionally with m."
+        )
+
+    return core + ("m" if has_m else "")
+
+
+def injury_roll_probability(suffix: str) -> float:
+    """Return 2D6 injury success probability for a validated injury suffix."""
+
+    normalized = _normalize_injury_suffix(suffix)
+    if not normalized:
+        return 1.0
+
+    has_m = normalized.endswith("m")
+    core = normalized[:-1] if has_m else normalized
+    target = _INJURY_BASE_TARGETS[core] - (1 if has_m else 0)
+    successful = sum(1 for die1 in range(1, 7) for die2 in range(1, 7) if die1 + die2 >= target)
+    return successful / 36
+
+
+def armor_and_injury_probability(target: ArmorValueTarget) -> float:
+    """Probability for armor break plus optional injury roll."""
+
+    return armor_break_probability(target.target) * injury_roll_probability(target.injury_suffix)
+
+
+Step = Union[RollTarget, BlockDiceTarget, ArmorValueTarget]
 
 
 @dataclass(frozen=True)
@@ -104,7 +227,7 @@ class StepResult:
     """Probability summary for one roll inside the chain."""
 
     token: str
-    threshold: int | None  # None for block dice steps
+    threshold: int | None  # None for non-D6 steps
     local_rerolls: int
     single_attempt_probability: float
     roll_probability: float
@@ -134,15 +257,18 @@ class CalculationResult:
 def parse_roll_sequence(raw_text: str) -> list[Step]:
     """Split user input into ordered roll targets.
 
-    Accepts D6 tokens (``2+``, ``3++``, ``224s3``) and block dice tokens
-    (``1d``, ``2d+``, ``-3d*``, ``2d+-``) in any mix, separated by spaces or
-    commas.  Compact D6 shorthand (``224s3``) is also supported within a single
-    whitespace-delimited part.
+    Accepts D6 tokens (``2+``, ``3++``, ``224s3``), block dice tokens
+    (``1d``, ``2d+``, ``-3d*``, ``2d+-``), and armor tokens (``a9``, ``av9``,
+    ``av9k``, ``av9sim``)
+    in any mix, separated by spaces or commas. Compact notation without
+    whitespace such as ``3++2+2d-av9`` is also supported.
     """
 
     raw_parts = [p for p in re.split(r"[,\s]+", raw_text.strip()) if p]
     if not raw_parts:
         raise ValueError("Enter at least one target roll such as 2+, 3+, 4+.")
+
+    raw_parts = _combine_spaced_armor_injury_tokens(raw_parts)
 
     result: list[Step] = []
     for part in raw_parts:
@@ -151,15 +277,71 @@ def parse_roll_sequence(raw_text: str) -> list[Step]:
     return result
 
 
+def _combine_spaced_armor_injury_tokens(raw_parts: list[str]) -> list[str]:
+    """Merge tokens like `av9 k` or `av9 s k m` into one logical armor token."""
+
+    combined: list[str] = []
+    index = 0
+    while index < len(raw_parts):
+        current = raw_parts[index]
+        if _is_plain_armor_token(current):
+            suffix_parts: list[str] = []
+            next_index = index + 1
+            while next_index < len(raw_parts) and _is_injury_suffix_fragment_token(raw_parts[next_index]):
+                suffix_parts.append(raw_parts[next_index])
+                next_index += 1
+
+            if suffix_parts:
+                combined.append(current + "".join(suffix_parts))
+                index = next_index
+                continue
+
+            combined.append(current)
+            index += 1
+            continue
+
+        combined.append(current)
+        index += 1
+
+    return combined
+
+
+def _is_plain_armor_token(token: str) -> bool:
+    """Return True for `aN`/`avN` tokens that do not already have a suffix."""
+
+    return re.fullmatch(r"a(?:v)?(?:[1-9]|10|11)", token.lower()) is not None
+
+
+def _is_injury_suffix_token(token: str) -> bool:
+    """Return True when the token is a valid standalone injury suffix."""
+
+    try:
+        return bool(_normalize_injury_suffix(token))
+    except ValueError:
+        return False
+
+
+def _is_injury_suffix_fragment_token(token: str) -> bool:
+    """Return True for raw suffix fragments composed only of i/k/s/m letters."""
+
+    return re.fullmatch(r"[kismKISM]+", token) is not None
+
+
 def _parse_mixed_part(part: str) -> list[Step]:
     """Parse one compact segment that may mix D6 and block dice tokens.
 
-    Supports strings like ``3++2+2d-`` with no whitespace between token types.
+    Supports strings like ``3++2+2d-av9`` with no whitespace between token
+    types.
     """
 
     steps: list[Step] = []
     index = 0
     while index < len(part):
+        if _starts_armor_token(part, index):
+            target, index = _parse_armor_target_from(part, index)
+            steps.append(target)
+            continue
+
         if _starts_block_token(part, index):
             target, index = _parse_block_target_from(part, index)
             steps.append(target)
@@ -169,6 +351,60 @@ def _parse_mixed_part(part: str) -> list[Step]:
         steps.append(target)
 
     return steps
+
+
+def _starts_armor_token(text: str, index: int) -> bool:
+    """Return True when an armor token starts at ``text[index]``."""
+
+    if index >= len(text):
+        return False
+    if text[index].lower() != "a":
+        return False
+
+    next_index = index + 1
+    if next_index < len(text) and text[next_index].lower() == "v":
+        next_index += 1
+
+    return next_index < len(text) and text[next_index].isdigit()
+
+
+def _parse_armor_target_from(text: str, index: int) -> tuple[ArmorValueTarget, int]:
+    """Parse one armor token (aN/avN plus optional injury suffix) from text."""
+
+    start = index
+    if text[index].lower() != "a":
+        raise ValueError(f"Invalid armor token near {text[start:]!r}.")
+    index += 1
+
+    if index < len(text) and text[index].lower() == "v":
+        index += 1
+
+    if index >= len(text) or not text[index].isdigit():
+        raise ValueError(
+            f"Invalid armor token near {text[start:]!r}. Use a1..a11 or av1..av11."
+        )
+
+    # Parse one or two digits only because valid AV range is 1..11.
+    digits = text[index]
+    index += 1
+    if index < len(text) and text[index].isdigit():
+        digits += text[index]
+        index += 1
+
+    target = int(digits)
+    if target < 1 or target > 11:
+        raise ValueError(
+            f"Invalid armor value {target}. Use a1..a11 or av1..av11."
+        )
+
+    suffix_start = index
+    while index < len(text) and text[index].lower() in "kism":
+        index += 1
+    suffix = text[suffix_start:index]
+
+    normalized_suffix = _normalize_injury_suffix(suffix)
+
+    return ArmorValueTarget(target=target, injury_suffix=normalized_suffix), index
 
 
 def _starts_block_token(text: str, index: int) -> bool:
@@ -371,8 +607,9 @@ class RollSequenceCalculator:
         """Calculate base and shared-reroll odds for an ordered roll sequence.
 
         The method evaluates the chain multiple times: once for each available
-        global reroll budget from 0 up to `max_global_rerolls`.  `sequence` may
-        contain a mix of `RollTarget` and `BlockDiceTarget` steps.
+        global reroll budget from 0 up to `max_global_rerolls`. `sequence` may
+        contain a mix of `RollTarget`, `BlockDiceTarget`, and `ArmorValueTarget`
+        steps.
         """
 
         if not sequence:
@@ -382,6 +619,8 @@ class RollSequenceCalculator:
         for target in sequence:
             if target.local_rerolls not in (0, 1):
                 raise ValueError("Each die can be rerolled at most once.")
+            if isinstance(target, ArmorValueTarget) and target.local_rerolls != 0:
+                raise ValueError("Armor steps do not allow rerolls.")
 
         steps: list[StepResult] = []
         # For each allowed reroll budget, keep the cumulative success chance after
@@ -405,13 +644,17 @@ class RollSequenceCalculator:
                 single_attempt_probability = target.base_probability
                 roll_probability = 1 - (1 - single_attempt_probability) ** (target.local_rerolls + 1)
                 threshold: int | None = None
+            elif isinstance(target, ArmorValueTarget):
+                single_attempt_probability = armor_and_injury_probability(target)
+                roll_probability = 1 - (1 - single_attempt_probability) ** (target.local_rerolls + 1)
+                threshold = None
             else:
                 single_attempt_probability = self.roll_probability(target.threshold)
                 roll_probability = self.roll_probability_with_local_rerolls(target.threshold, target.local_rerolls)
                 threshold = target.threshold
             steps.append(
                 StepResult(
-                    token=target.token,
+                    token=target.display_token,
                     threshold=threshold,
                     local_rerolls=target.local_rerolls,
                     single_attempt_probability=single_attempt_probability,
@@ -456,7 +699,7 @@ class RollSequenceCalculator:
 
     @staticmethod
     def _advance_distribution(distribution: list[float], target: Step) -> list[float]:
-        """Advance the shared-reroll state by one roll or block dice pool.
+        """Advance the shared-reroll state by one roll, block pool, or armor roll.
 
         The current distribution represents successful paths only.
 
@@ -466,6 +709,15 @@ class RollSequenceCalculator:
         """
 
         next_distribution = [0.0] * len(distribution)
+        if isinstance(target, ArmorValueTarget):
+            # Armor steps are resolved as a single 2D6 roll with no reroll usage.
+            single_attempt_probability = armor_and_injury_probability(target)
+            for rerolls_remaining, state_probability in enumerate(distribution):
+                if state_probability == 0:
+                    continue
+                next_distribution[rerolls_remaining] += state_probability * single_attempt_probability
+            return next_distribution
+
         if isinstance(target, BlockDiceTarget):
             single_attempt_probability = target.base_probability
             local_roll_probability = 1 - (1 - single_attempt_probability) ** (target.local_rerolls + 1)

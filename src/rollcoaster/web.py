@@ -25,7 +25,7 @@ def build_result_view(result: CalculationResult) -> dict[str, object]:
         "rr1": rr1,
         "rr2": rr2,
         "rr_pair": f"({rr1} / {rr2})",
-        "parsed_tokens": [target.token for target in result.sequence],
+        "parsed_tokens": [step.token for step in result.steps],
         "steps": [
             {
                 "index": index,

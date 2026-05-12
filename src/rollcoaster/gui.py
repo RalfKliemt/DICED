@@ -350,7 +350,7 @@ class RollCoasterApp:
 
     def _format_log_entry(self, result: CalculationResult) -> str:
         """Return a dot-leader log line with left sequence and right-aligned result."""
-        sequence = " ".join(target.token for target in result.sequence)
+        sequence = " ".join(step.token for step in result.steps)
         base = result.final_probability
         rr1 = result.probability_with_global_rerolls(1)
         rr2 = result.probability_with_global_rerolls(2)

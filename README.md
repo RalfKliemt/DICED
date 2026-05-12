@@ -73,6 +73,49 @@ Examples:
 - `-3d*` — 3-die block where the defender picks, requiring POW on all dice
 - `3+ 2d+ 4+` — a mixed chain: a D6 roll, then a block, then another D6 roll
 
+## Armor Break (2D6)
+
+Armor break checks can also be part of the chain.
+
+- Use `aN` or `avN` where `N` is the target sum on 2D6
+- The roll succeeds when `2D6 >= N`
+- Valid range is `1` to `11`
+
+Examples:
+
+- `a9`
+- `av9`
+- `3++2+2d-av9`
+
+**Optional injury suffixes**
+
+After `aN` or `avN`, you can add injury postfix letters. These represent a
+second 2D6 roll after the armor break succeeds.
+
+| Suffix | Meaning              | Injury target |
+|--------|----------------------|---------------|
+| `k`    | ko                   | `8+`          |
+| `i`    | injury               | `10+`         |
+| `sk`   | stunty ko            | `7+`          |
+| `si`   | stunty injury        | `9+`          |
+| `m`    | mighty blow modifier | lower by `1`  |
+
+Rules:
+
+- `m` lowers the injury target by `1`
+- `s`, `k`, `i`, and `m` can be written in flexible order where the result is meaningful
+- aliases are accepted: `sk` or `ks`, `si` or `is`
+- you can also put spaces between the armor part and the injury letters
+- no rerolls are used on armor or injury rolls
+
+Examples:
+
+- `av9k` = armor `9+`, then ko on `8+`
+- `av9km` = armor `9+`, then ko on `7+`
+- `av9sk` or `av9ks` = armor `9+`, then stunty ko on `7+`
+- `av9sim`, `av9 m s i`, `av9 is m` all work
+- `3++2+2d-av9 k` works with a space between `av9` and the injury suffix
+
 ## Result Meaning
 
 The GUI shows three overall probabilities:

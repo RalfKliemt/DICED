@@ -3,10 +3,14 @@
 import unittest
 
 from rollcoaster.core import (
+    ArmorValueTarget,
     BlockDiceTarget,
     RollSequenceCalculator,
     RollTarget,
+    armor_and_injury_probability,
+    armor_break_probability,
     block_die_single_probability,
+    injury_roll_probability,
     parse_roll_sequence,
 )
 
@@ -104,6 +108,43 @@ class ParseRollSequenceTests(unittest.TestCase):
             ],
         )
 
+    def test_parses_armor_token_short_form(self) -> None:
+        self.assertEqual(parse_roll_sequence("a9"), [ArmorValueTarget(target=9)])
+
+    def test_parses_armor_token_long_form(self) -> None:
+        self.assertEqual(parse_roll_sequence("av10"), [ArmorValueTarget(target=10)])
+
+    def test_parses_armor_with_injury_k_suffix(self) -> None:
+        self.assertEqual(parse_roll_sequence("av9k"), [ArmorValueTarget(target=9, injury_suffix="k")])
+
+    def test_parses_armor_with_injury_alias_suffixes(self) -> None:
+        self.assertEqual(parse_roll_sequence("av9sk"), [ArmorValueTarget(target=9, injury_suffix="ks")])
+        self.assertEqual(parse_roll_sequence("av9is"), [ArmorValueTarget(target=9, injury_suffix="si")])
+
+    def test_parses_armor_with_injury_m_modifier(self) -> None:
+        self.assertEqual(parse_roll_sequence("av9km"), [ArmorValueTarget(target=9, injury_suffix="km")])
+        self.assertEqual(parse_roll_sequence("av9mks"), [ArmorValueTarget(target=9, injury_suffix="ksm")])
+
+    def test_parses_spaced_armor_and_injury_suffix(self) -> None:
+        self.assertEqual(parse_roll_sequence("av9 k"), [ArmorValueTarget(target=9, injury_suffix="k")])
+        self.assertEqual(parse_roll_sequence("av9 sim"), [ArmorValueTarget(target=9, injury_suffix="sim")])
+
+    def test_parses_multi_part_spaced_armor_suffix_in_any_order(self) -> None:
+        self.assertEqual(parse_roll_sequence("av9 s k m"), [ArmorValueTarget(target=9, injury_suffix="ksm")])
+        self.assertEqual(parse_roll_sequence("av9 m s i"), [ArmorValueTarget(target=9, injury_suffix="sim")])
+        self.assertEqual(parse_roll_sequence("av9 m k"), [ArmorValueTarget(target=9, injury_suffix="km")])
+
+    def test_parses_mixed_compact_with_armor(self) -> None:
+        self.assertEqual(
+            parse_roll_sequence("3++2+2d-av9"),
+            [
+                RollTarget(threshold=3, local_rerolls=1),
+                RollTarget(threshold=2, local_rerolls=0),
+                BlockDiceTarget(dice_count=2, negative=False, outcome="-"),
+                ArmorValueTarget(target=9),
+            ],
+        )
+
     def test_parses_local_reroll_notation(self) -> None:
         self.assertEqual(
             parse_roll_sequence("3++ 4+"),
@@ -128,6 +169,14 @@ class ParseRollSequenceTests(unittest.TestCase):
     def test_rejects_invalid_compact_tokens(self) -> None:
         with self.assertRaises(ValueError):
             parse_roll_sequence("22x3")
+
+    def test_rejects_invalid_armor_tokens(self) -> None:
+        with self.assertRaises(ValueError):
+            parse_roll_sequence("av12")
+        with self.assertRaises(ValueError):
+            parse_roll_sequence("av9x")
+        with self.assertRaises(ValueError):
+            parse_roll_sequence("av9s")
 
 
 class RollSequenceCalculatorTests(unittest.TestCase):
@@ -185,6 +234,51 @@ class BlockDiceProbabilityTests(unittest.TestCase):
     def test_rejects_unknown_outcome(self) -> None:
         with self.assertRaises(ValueError):
             block_die_single_probability("?")
+
+
+class ArmorBreakProbabilityTests(unittest.TestCase):
+    """Verify 2D6 armor break probability by target value."""
+
+    def test_probability_for_av9(self) -> None:
+        # Sums >= 9 on 2D6: 10 outcomes out of 36.
+        self.assertAlmostEqual(armor_break_probability(9), 10 / 36)
+
+    def test_probability_for_av10(self) -> None:
+        # Sums >= 10 on 2D6: 6 outcomes out of 36.
+        self.assertAlmostEqual(armor_break_probability(10), 6 / 36)
+
+    def test_rejects_invalid_av_range(self) -> None:
+        with self.assertRaises(ValueError):
+            armor_break_probability(12)
+
+    def test_injury_probability_k_is_eight_plus(self) -> None:
+        self.assertAlmostEqual(injury_roll_probability("k"), 15 / 36)
+
+    def test_injury_probability_i_is_ten_plus(self) -> None:
+        self.assertAlmostEqual(injury_roll_probability("i"), 6 / 36)
+
+    def test_injury_probability_alias_and_m(self) -> None:
+        # sk => 7+ (21/36), skm => 6+ (26/36)
+        self.assertAlmostEqual(injury_roll_probability("sk"), 21 / 36)
+        self.assertAlmostEqual(injury_roll_probability("ksm"), 26 / 36)
+
+    def test_combined_armor_and_injury_probability(self) -> None:
+        # av9k = (10/36) * (15/36)
+        self.assertAlmostEqual(
+            armor_and_injury_probability(ArmorValueTarget(target=9, injury_suffix="k")),
+            (10 / 36) * (15 / 36),
+        )
+
+    def test_rejects_invalid_injury_suffix(self) -> None:
+        with self.assertRaises(ValueError):
+            injury_roll_probability("sx")
+
+    def test_armor_display_token_is_friendly(self) -> None:
+        self.assertEqual(ArmorValueTarget(target=9, injury_suffix="k").display_token, "av9 ko")
+        self.assertEqual(ArmorValueTarget(target=9, injury_suffix="i").display_token, "av9 injury")
+        self.assertEqual(ArmorValueTarget(target=9, injury_suffix="ks").display_token, "av9 stunty ko (sk)")
+        self.assertEqual(ArmorValueTarget(target=9, injury_suffix="si").display_token, "av9 stunty injury")
+        self.assertEqual(ArmorValueTarget(target=9, injury_suffix="km").display_token, "av9 ko (mb)")
 
 
 class ParseBlockDiceTests(unittest.TestCase):
@@ -300,6 +394,30 @@ class BlockDiceCalculatorTests(unittest.TestCase):
         result = RollSequenceCalculator().calculate(parse_roll_sequence("3++2+2d-"))
         expected = (8 / 9) * (5 / 6) * (1 - (2 / 6) ** 2)
         self.assertAlmostEqual(result.final_probability, expected)
+
+    def test_mixed_compact_chain_with_armor(self) -> None:
+        # Add av9 armor break to the compact mixed chain.
+        result = RollSequenceCalculator().calculate(parse_roll_sequence("3++2+2d-av9"))
+        expected = (8 / 9) * (5 / 6) * (1 - (2 / 6) ** 2) * (10 / 36)
+        self.assertAlmostEqual(result.final_probability, expected)
+
+    def test_mixed_compact_chain_with_armor_and_injury(self) -> None:
+        # Add av9k: armor 9+ then injury 8+.
+        result = RollSequenceCalculator().calculate(parse_roll_sequence("3++2+2d-av9k"))
+        expected = (8 / 9) * (5 / 6) * (1 - (2 / 6) ** 2) * (10 / 36) * (15 / 36)
+        self.assertAlmostEqual(result.final_probability, expected)
+
+    def test_shared_rerolls_do_not_apply_to_armor_step(self) -> None:
+        # av9 is a fixed 2D6 check: RR budget must not change its chance.
+        result = RollSequenceCalculator().calculate(parse_roll_sequence("av9"), max_global_rerolls=2)
+        expected = 10 / 36
+        self.assertAlmostEqual(result.probability_with_global_rerolls(0), expected)
+        self.assertAlmostEqual(result.probability_with_global_rerolls(1), expected)
+        self.assertAlmostEqual(result.probability_with_global_rerolls(2), expected)
+
+    def test_rejects_local_reroll_on_armor_target(self) -> None:
+        with self.assertRaises(ValueError):
+            RollSequenceCalculator().calculate([ArmorValueTarget(target=9, local_rerolls=1)])
 
 
 if __name__ == "__main__":
