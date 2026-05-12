@@ -273,3 +273,41 @@ a {
 .placeholder-line {
   color: var(--dots);
 }
+
+.legal-panel {
+  width: 584px;
+  margin: 10px auto 0;
+  padding: 10px 12px;
+  background: #e2d9c9;
+  border: 1px solid #c8bea8;
+  border-radius: 8px;
+  color: #4c4539;
+}
+
+.legal-title {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.legal-text {
+  margin: 0 0 6px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.legal-details {
+  font-size: 12px;
+}
+
+.legal-details summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.legal-details p {
+  margin: 6px 0 0;
+  line-height: 1.35;
+}

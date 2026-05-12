@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from flask import Flask, render_template, request, session
+from flask import Flask, render_template, request
 
 try:
     from .core import CalculationResult, RollSequenceCalculator, parse_roll_sequence
@@ -68,7 +68,6 @@ def create_app() -> Flask:
     """Create the Flask application."""
 
     app = Flask(__name__)
-    app.config["SECRET_KEY"] = "diced-dev-secret"
     calculator = RollSequenceCalculator()
 
     @app.get("/")
@@ -76,20 +75,15 @@ def create_app() -> Flask:
         sequence_text = request.args.get("sequence", "").strip()
         error = ""
         result_view = None
-        log_lines = session.get("log_lines", [])
+        log_lines: list[str] = []
 
         if sequence_text:
             try:
                 sequence = parse_roll_sequence(sequence_text)
                 result = calculator.calculate(sequence, max_global_rerolls=2)
                 result_view = build_result_view(result)
-                log_lines.append(result_view["log_line"])
             except ValueError as exc:
                 error = str(exc)
-                log_lines.append(f"{sequence_text}: ERROR ({error})")
-
-            session["log_lines"] = log_lines[-7:]
-            log_lines = session["log_lines"]
 
         return render_template(
             "index.html",

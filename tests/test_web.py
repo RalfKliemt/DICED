@@ -27,15 +27,11 @@ class WebInterfaceTests(unittest.TestCase):
         self.assertIn(b"3++ 4+", response.data)
         self.assertIn(b"........", response.data)
 
-    def test_log_keeps_up_to_seven_lines(self) -> None:
-        for sequence in ["2+", "3+", "4+", "5+", "6+", "2++", "3++", "4++"]:
-            self.client.get("/", query_string={"sequence": sequence})
-
+    def test_server_response_does_not_persist_log_lines(self) -> None:
+        self.client.get("/", query_string={"sequence": "2+"})
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
-        self.assertNotIn(b"2+ ", response.data)
-        self.assertIn(b"3+ ", response.data)
-        self.assertIn(b"4++", response.data)
+        self.assertIn(b"Type a chain and press Go!", response.data)
 
     def test_invalid_input_shows_error(self) -> None:
         response = self.client.get("/", query_string={"sequence": "8+"})
