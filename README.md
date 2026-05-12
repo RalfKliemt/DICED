@@ -25,6 +25,7 @@ Enter targets either as explicit tokens separated by commas or spaces, or in a c
 - `3++` means a 3+ roll with one built-in reroll for that same die
 - `224s3` means `2+ 2+ 4++ 3+`
 - in shorthand, `s` marks a built-in reroll on the previous die
+- you can also leave out whitespace entirely, for example `2+3++4+` or `224s3`
 
 Each die can be rerolled at most once. That means:
 

@@ -28,6 +28,27 @@ class ParseRollSequenceTests(unittest.TestCase):
             ],
         )
 
+    def test_parses_concatenated_explicit_values(self) -> None:
+        self.assertEqual(
+            parse_roll_sequence("2+3+4+"),
+            [
+                RollTarget(threshold=2, local_rerolls=0),
+                RollTarget(threshold=3, local_rerolls=0),
+                RollTarget(threshold=4, local_rerolls=0),
+            ],
+        )
+
+    def test_parses_concatenated_mixed_values(self) -> None:
+        self.assertEqual(
+            parse_roll_sequence("2+3++4s5+"),
+            [
+                RollTarget(threshold=2, local_rerolls=0),
+                RollTarget(threshold=3, local_rerolls=1),
+                RollTarget(threshold=4, local_rerolls=1),
+                RollTarget(threshold=5, local_rerolls=0),
+            ],
+        )
+
     def test_parses_compact_shorthand_values(self) -> None:
         self.assertEqual(
             parse_roll_sequence("224s3"),
