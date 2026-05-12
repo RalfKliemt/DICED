@@ -134,6 +134,12 @@ a {
   place-items: center;
   position: relative;
   z-index: 1;
+  width: 100%;
+}
+
+.header-row {
+  width: 100%;
+  position: relative;
 }
 
 .coaster-header h1 {
@@ -142,6 +148,23 @@ a {
   font-size: 110px;
   letter-spacing: 0.04em;
   color: var(--accent);
+  text-align: center;
+}
+
+.syntax-help-button {
+  border: 1px solid #b58b35;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: var(--button);
+  color: #1a1a1a;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.syntax-help-button:hover {
+  background: var(--button-hover);
 }
 
 .sequence-form {
@@ -163,10 +186,10 @@ a {
   border-radius: 16px;
   background: #f8f8f7;
   color: var(--ink);
-  text-align: center;
+  text-align: left;
   font-size: 24px;
   font-weight: 700;
-  padding: 0 7.5rem 0 1rem;
+  padding: 0 10rem 0 1rem;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.02);
 }
 
@@ -175,9 +198,9 @@ a {
   outline-offset: 2px;
 }
 
-.entry-wrap button {
+.go-button {
   position: absolute;
-  right: 0.4rem;
+  right: 2.9rem;
   top: 50%;
   transform: translateY(-50%);
   border: 1px solid #b58b35;
@@ -191,8 +214,19 @@ a {
   cursor: pointer;
 }
 
-.entry-wrap button:hover {
+.go-button:hover {
   background: var(--button-hover);
+}
+
+.input-help-button {
+  position: absolute;
+  right: 0.4rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2.1rem;
+  height: calc(100% - 0.8rem);
+  border-radius: 11px;
+  padding: 0;
 }
 
 .result-zone {
@@ -310,4 +344,82 @@ a {
 .legal-details p {
   margin: 6px 0 0;
   line-height: 1.35;
+}
+
+.syntax-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(29, 29, 29, 0.35);
+  z-index: 25;
+}
+
+.syntax-panel {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 430px;
+  max-width: calc(100vw - 28px);
+  padding: 12px 14px;
+  background: #fffaf0;
+  border: 1px solid #c9b384;
+  border-radius: 10px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.22);
+  z-index: 30;
+}
+
+.syntax-panel.is-hidden,
+.syntax-overlay.is-hidden {
+  display: none;
+}
+
+.syntax-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.syntax-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #5f3f00;
+}
+
+.syntax-close-button {
+  border: 1px solid #b58b35;
+  border-radius: 8px;
+  padding: 5px 8px;
+  background: var(--button);
+  color: #1a1a1a;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.syntax-close-button:hover {
+  background: var(--button-hover);
+}
+
+.syntax-content {
+  font-size: 12px;
+  line-height: 1.35;
+  color: #4c4539;
+}
+
+.syntax-content p {
+  margin: 0 0 8px;
+}
+
+.syntax-content ul {
+  margin: 0 0 10px;
+  padding-left: 18px;
+}
+
+.syntax-content li + li {
+  margin-top: 4px;
 }

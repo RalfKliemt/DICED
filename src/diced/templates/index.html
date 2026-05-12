@@ -12,7 +12,9 @@
         <section class="coaster-shadow"></section>
         <section class="coaster">
           <header class="coaster-header">
-            <h1>DICED</h1>
+            <div class="header-row">
+              <h1>DICED</h1>
+            </div>
           </header>
 
           <form class="sequence-form" method="get" action="/">
@@ -25,7 +27,8 @@
                 placeholder="224s3"
                 autocomplete="off"
               >
-              <button type="submit">Go!</button>
+              <button type="submit" class="go-button">Go!</button>
+              <button type="button" id="syntax-help-open" class="syntax-help-button input-help-button" aria-haspopup="dialog" aria-controls="syntax-help-panel">?</button>
             </div>
           </form>
 
@@ -85,12 +88,79 @@
       </section>
     </div>
 
+    <section class="syntax-overlay is-hidden" id="syntax-overlay" aria-hidden="true"></section>
+    <section class="syntax-panel is-hidden" id="syntax-help-panel" role="dialog" aria-modal="true" aria-labelledby="syntax-help-title">
+      <div class="syntax-panel-header">
+        <p id="syntax-help-title" class="syntax-title">Sequence Syntax</p>
+        <button type="button" id="syntax-help-close" class="syntax-close-button" aria-label="Close syntax help">Close</button>
+      </div>
+      <div class="syntax-content">
+        <p>Connected 1 die rolls. The lower results are with 1 and 2 rerolls.</p>
+        <ul>
+          <li><strong>2+</strong> means a normal D6 roll succeeding on 2 or higher.</li>
+          <li><strong>3++</strong> means a 3+ roll with one built-in reroll for that die.</li>
+          <li>You can leave out whitespace and + entirely, for example <strong>2+3++4+</strong> and <strong>23++4</strong> means <strong>2+ 3++ 4+</strong>.</li>
+          <li><strong>p</strong> or <strong>3+p</strong> adds a 2/3 reroll chance on that die.</li>
+        </ul>
+        <p>Block dice:</p>
+        <ul>
+          <li><strong>1d</strong>,<strong>2d</strong>,<strong>3d</strong>,<strong>-2d</strong>,<strong>-3d</strong> success on pow/pow*</li>
+          <li>Add <strong>+</strong> (Block), <strong>-</strong> (Push), <strong>*</strong> (Pow only), <strong>/</strong> (Push only)</li>
+          <li><strong>a9</strong> or <strong>av9</strong> is a 2D6 armor-break check.</li>
+          <li>Injury suffixes: <strong>k</strong> (KO), <strong>i</strong> (Injury), <strong>s</strong> (Stunty), and <strong>m</strong> (Mighty Blow) can follow armor rolls.</li>
+        </ul>
+        Example: <strong>2+ 4+ 12d+ av9im</strong> for an Ogre with Block to activate, dodge & injure a Human Lineman 
+      </div>
+    </section>
+
     <script>
       document.addEventListener("DOMContentLoaded", function () {
         const input = document.getElementById("sequence");
         const logPanel = document.getElementById("log-panel");
+        const syntaxOpen = document.getElementById("syntax-help-open");
+        const syntaxClose = document.getElementById("syntax-help-close");
+        const syntaxPanel = document.getElementById("syntax-help-panel");
+        const syntaxOverlay = document.getElementById("syntax-overlay");
         const placeholderText = "Type a chain and press Go! to write a log line here.";
         const currentLine = {{ (result.log_line if result else (sequence_text ~ ': ERROR (' ~ error ~ ')' if error else '')) | tojson }};
+
+        function openSyntaxHelp() {
+          if (syntaxPanel) {
+            syntaxPanel.classList.remove("is-hidden");
+          }
+          if (syntaxOverlay) {
+            syntaxOverlay.classList.remove("is-hidden");
+            syntaxOverlay.setAttribute("aria-hidden", "false");
+          }
+        }
+
+        function closeSyntaxHelp() {
+          if (syntaxPanel) {
+            syntaxPanel.classList.add("is-hidden");
+          }
+          if (syntaxOverlay) {
+            syntaxOverlay.classList.add("is-hidden");
+            syntaxOverlay.setAttribute("aria-hidden", "true");
+          }
+        }
+
+        if (syntaxOpen) {
+          syntaxOpen.addEventListener("click", openSyntaxHelp);
+        }
+
+        if (syntaxClose) {
+          syntaxClose.addEventListener("click", closeSyntaxHelp);
+        }
+
+        if (syntaxOverlay) {
+          syntaxOverlay.addEventListener("click", closeSyntaxHelp);
+        }
+
+        document.addEventListener("keydown", function (event) {
+          if (event.key === "Escape") {
+            closeSyntaxHelp();
+          }
+        });
 
         if (logPanel) {
           let persistedLines = [];
