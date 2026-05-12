@@ -28,35 +28,106 @@ ICON_NAME = "DICED.icns"
 
 
 def _resolve_python() -> str:
-    """Prefer the project venv Python, fallback to python3 on PATH."""
+    """Find the best Python at build time and return its absolute path.
+
+    Priority:
+    1. Project venv Python (known to work with all dependencies).
+    2. Homebrew arm64 Python (/opt/homebrew).
+    3. Homebrew Intel Python (/usr/local).
+    Falls back to 'python3' only as a last resort.
+    """
     venv_python = PROJECT_ROOT / ".venv" / "bin" / "python"
     if venv_python.exists():
-        return str(venv_python)
-    return os.environ.get("PYTHON", "python3")
+        # Resolve symlinks to get the real binary path.
+        return str(venv_python.resolve())
+    for candidate in [
+        Path("/opt/homebrew/bin/python3"),
+        Path("/usr/local/bin/python3"),
+    ]:
+        if candidate.exists():
+            return str(candidate)
+    return "python3"
 
 
 def _build_launcher_script(python_path: str) -> str:
+    """Build a bash launcher that uses the given Python binary.
+
+    Embedding the path at build time avoids picking up Xcode's Python 3.9
+    (which ships with Tcl/Tk 8.5 that panics in TkpInit on modern macOS)
+    when the app is launched via launchd, where Homebrew's PATH is not active.
+    """
     return f"""#!/bin/bash
 set -euo pipefail
-export PYTHONPATH=\"{(PROJECT_ROOT / 'src').as_posix()}:${{PYTHONPATH:-}}\"
-exec \"{python_path}\" -m diced
+
+# Get the directory containing this script (MacOS/)
+SCRIPT_DIR="$( cd "$( dirname "$0" )" && pwd )"
+RESOURCES_DIR="${{SCRIPT_DIR}}/../Resources"
+
+export PYTHONPATH="${{RESOURCES_DIR}}/lib:${{PYTHONPATH:-}}"
+export PYTHONDONTWRITEBYTECODE=1
+
+# Python binary resolved at build time — never picks up Xcode Python 3.9
+# via PATH when double-clicked (launchd does not source ~/.zshrc / brew PATH).
+exec "{python_path}" -c "
+import sys, os
+resources_dir = os.path.normpath(
+    os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), \'..\', \'Resources\')
+)
+lib_dir = os.path.join(resources_dir, \'lib\')
+if os.path.isdir(lib_dir):
+    sys.path.insert(0, lib_dir)
+from diced.main import main
+main()
+" "$@"
 """
 
 
+def _copy_package_tree(src: Path, dst: Path) -> None:
+    """Recursively copy a directory, handling .pyc and __pycache__ exclusion."""
+    dst.mkdir(parents=True, exist_ok=True)
+    for item in src.iterdir():
+        if item.is_dir():
+            if item.name in ("__pycache__", ".pytest_cache", "*.egg-info"):
+                continue
+            _copy_package_tree(item, dst / item.name)
+        else:
+            if not item.name.endswith(".pyc"):
+                shutil.copy2(item, dst / item.name)
+
+
 def build_app_bundle() -> Path:
-    """Create a minimal .app bundle that launches the Tkinter GUI."""
+    """Create a minimal .app bundle that launches the Tkinter GUI.
+    
+    This makes the app self-contained by bundling the Python package.
+    Uses a Python launcher for better environment control.
+    """
     if APP_DIR.exists():
         shutil.rmtree(APP_DIR)
 
     MACOS_DIR.mkdir(parents=True, exist_ok=True)
     RESOURCES_DIR.mkdir(parents=True, exist_ok=True)
 
-    launcher_path = MACOS_DIR / APP_NAME
-    launcher_path.write_text(_build_launcher_script(_resolve_python()), encoding="utf-8")
+    # Create the lib directory where we'll bundle the Python package
+    lib_dir = RESOURCES_DIR / "lib"
+    lib_dir.mkdir(parents=True, exist_ok=True)
 
+    # Copy the diced package to Resources/lib
+    src_diced = PROJECT_ROOT / "src" / "diced"
+    dst_diced = lib_dir / "diced"
+    _copy_package_tree(src_diced, dst_diced)
+
+    # Resolve the Python binary at build time and embed it in the launcher.
+    python_path = _resolve_python()
+    print(f"  Python: {python_path}")
+
+    launcher_path = MACOS_DIR / APP_NAME
+    launcher_path.write_text(_build_launcher_script(python_path), encoding="utf-8")
+
+    # Make it executable
     mode = launcher_path.stat().st_mode
     launcher_path.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
+    # Copy icon if it exists
     if ICON_FILE.exists():
         shutil.copy2(ICON_FILE, RESOURCES_DIR / ICON_NAME)
 
