@@ -41,6 +41,38 @@ Examples:
 
 The order matters because the chain succeeds only if every step succeeds.
 
+## Block Dice
+
+The standard Blood Bowl block die has 6 faces: POW, POW/SKULL, BOTH DOWN, PUSH, PUSH, SKULL.
+Blood Bowl block dice can be mixed into a sequence. A block dice token looks like `2d+` — dice count, the letter `d`, and an optional outcome symbol.
+
+**Dice count and sign**
+
+| Token prefix | Meaning                                                             |
+|--------------|---------------------------------------------------------------------|
+| `1d`         | 1-die block                                                         |
+| `2d`         | 2-die block — attacker picks, at least one die must show the result |
+| `3d`         | 3-die block — attacker picks                                        |
+| `-2d`        | 2-die block — defender picks, all dice must show the result         |
+| `-3d`        | 3-die block — defender picks                                        |
+
+**Outcome suffix** (append directly after `d`)
+
+| Suffix        | Outcome                          | Faces (of 6) |
+|---------------|----------------------------------|--------------|
+| *(none)*      | POW or POW/SKULL                 | 2            |
+| `+`           | Also BOTH DOWN                   | 3            |
+| `*`           | POW only                         | 1            |
+| `-`           | No turnover (not SKULL)          | 4            |
+| `+-` or `-+`  | No skull (anything except SKULL) | 5            |
+| `/`           | PUSH only                        | 2            |
+
+Examples:
+
+- `2d+` — 2-die block with Block skill (both-down-or-better)
+- `-3d*` — 3-die block where the defender picks, requiring POW on all dice
+- `3+ 2d+ 4+` — a mixed chain: a D6 roll, then a block, then another D6 roll
+
 ## Result Meaning
 
 The GUI shows three overall probabilities:
@@ -118,7 +150,7 @@ pip install -e .
 rollcoaster-web
 ```
 
-Open http://127.0.0.1:5000/ and enter a sequence such as `224s3`.
+Open <http://127.0.0.1:5000/> and enter a sequence such as `224s3`.
 
 ## PythonAnywhere
 
@@ -135,9 +167,9 @@ project_home = Path("/home/yourusername/RollCoaster")
 src_dir = project_home / "src"
 
 if str(project_home) not in sys.path:
-	sys.path.insert(0, str(project_home))
+    sys.path.insert(0, str(project_home))
 if str(src_dir) not in sys.path:
-	sys.path.insert(0, str(src_dir))
+    sys.path.insert(0, str(src_dir))
 
 from rollcoaster.web import app as application
 ```

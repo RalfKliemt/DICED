@@ -66,7 +66,7 @@ def create_app() -> Flask:
             sequence_text=sequence_text,
             error=error,
             result=result_view,
-            examples=["224s3", "3++ 4+ 5+", "2+, 3+, 4+"],
+            examples=["224s3", "3++ 4+ 5+", "2+ 2d+ 4+", "2+, 3+, 4+"],
         )
 
     return app

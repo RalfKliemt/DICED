@@ -1,4 +1,4 @@
-"""Core parsing and probability math for chained D6 roll calculations.
+"""Core parsing and probability math for chained D6 and block dice calculations.
 
 The calculator supports two reroll concepts:
 
@@ -7,12 +7,17 @@ The calculator supports two reroll concepts:
 
 Any single die may be rerolled at most once. A die that already has a built-in
 reroll from ++ cannot also consume a shared RR.
+
+Block dice tokens use Blood Bowl block die notation, e.g. 2d+ for a two-die
+block targeting a "both-down-or-better" result. Negative counts (-2d) mean the
+defending player picks, so all dice must show the desired face.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import re
+from typing import Union
 
 
 @dataclass(frozen=True)
@@ -32,12 +37,74 @@ class RollTarget:
         return f"{self.threshold}{'+' * (self.local_rerolls + 1)}"
 
 
+# ---------------------------------------------------------------------------
+# Block dice
+# ---------------------------------------------------------------------------
+
+# Standard Blood Bowl block die has 6 faces:
+#   POW, POW/SKULL, BOTH DOWN, PUSH, PUSH, SKULL
+# (PUSH appears on two faces, all others appear on one.)
+_BLOCK_OUTCOME_FACES: dict[str, int] = {
+    "": 2,    # POW + POW/SKULL  ("5+" equivalent)
+    "+": 3,   # POW + POW/SKULL + BOTH DOWN  ("4+")
+    "*": 1,   # POW only  ("6+")
+    "-": 4,   # No turnover: POW + BOTH DOWN + PUSH×2  ("3+")
+    "+-": 5,  # No skull: all except SKULL  ("2+")
+    "/": 2,   # Push only: PUSH×2  ("5+" by face count)
+}
+
+
+def block_die_single_probability(outcome: str) -> float:
+    """Return the probability of the desired outcome on one block die."""
+    if outcome not in _BLOCK_OUTCOME_FACES:
+        raise ValueError(
+            f"Unknown block die outcome: {outcome!r}. "
+            "Use '', '+', '*', '-', '+-', or '/'." 
+        )
+    return _BLOCK_OUTCOME_FACES[outcome] / 6
+
+
+@dataclass(frozen=True)
+class BlockDiceTarget:
+    """A Blood Bowl block dice pool roll.
+
+    `dice_count` is 1, 2, or 3.
+    `negative` is True for -2d/-3d where the defender picks: all dice must show
+    the desired face.  False means attacker picks: at least one die must match.
+    `outcome` is one of '', '+', '*', '-', '+-', '/'.
+    `local_rerolls` is 0 or 1 and works like on a D6 step (whole pool reroll).
+    """
+
+    dice_count: int
+    negative: bool
+    outcome: str
+    local_rerolls: int = 0
+
+    @property
+    def token(self) -> str:
+        """Rebuild the user-facing token, for example 2d+ or -3d+-."""
+        sign = "-" if self.negative else ""
+        reroll_marker = "++" if self.local_rerolls else ""
+        return f"{sign}{self.dice_count}d{self.outcome}{reroll_marker}"
+
+    @property
+    def base_probability(self) -> float:
+        """Pool success probability on a single attempt."""
+        p = block_die_single_probability(self.outcome)
+        if self.negative:
+            return p ** self.dice_count
+        return 1 - (1 - p) ** self.dice_count
+
+
+Step = Union[RollTarget, BlockDiceTarget]
+
+
 @dataclass(frozen=True)
 class StepResult:
     """Probability summary for one roll inside the chain."""
 
     token: str
-    threshold: int
+    threshold: int | None  # None for block dice steps
     local_rerolls: int
     single_attempt_probability: float
     roll_probability: float
@@ -48,7 +115,7 @@ class StepResult:
 class CalculationResult:
     """Full result for a parsed sequence, including per-step and final odds."""
 
-    sequence: list[RollTarget]
+    sequence: list[Step]
     steps: list[StepResult]
     global_reroll_probabilities: dict[int, float]
 
@@ -64,19 +131,85 @@ class CalculationResult:
         return self.global_reroll_probabilities[rerolls]
 
 
-def parse_roll_sequence(raw_text: str) -> list[RollTarget]:
+def parse_roll_sequence(raw_text: str) -> list[Step]:
     """Split user input into ordered roll targets.
 
-    Input accepts either explicit tokens such as `2+, 3++, 4+` or compact
-    shorthand such as `224s3`, where `s` marks a built-in reroll on the die
-    immediately before it.
+    Accepts D6 tokens (``2+``, ``3++``, ``224s3``) and block dice tokens
+    (``1d``, ``2d+``, ``-3d*``, ``2d+-``) in any mix, separated by spaces or
+    commas.  Compact D6 shorthand (``224s3``) is also supported within a single
+    whitespace-delimited part.
     """
 
-    tokens = _split_roll_tokens(raw_text)
-    if not tokens:
+    raw_parts = [p for p in re.split(r"[,\s]+", raw_text.strip()) if p]
+    if not raw_parts:
         raise ValueError("Enter at least one target roll such as 2+, 3+, 4+.")
 
-    return [_parse_threshold(token) for token in tokens]
+    result: list[Step] = []
+    for part in raw_parts:
+        result.extend(_parse_mixed_part(part))
+
+    return result
+
+
+def _parse_mixed_part(part: str) -> list[Step]:
+    """Parse one compact segment that may mix D6 and block dice tokens.
+
+    Supports strings like ``3++2+2d-`` with no whitespace between token types.
+    """
+
+    steps: list[Step] = []
+    index = 0
+    while index < len(part):
+        if _starts_block_token(part, index):
+            target, index = _parse_block_target_from(part, index)
+            steps.append(target)
+            continue
+
+        target, index = _parse_d6_target_from(part, index)
+        steps.append(target)
+
+    return steps
+
+
+def _starts_block_token(text: str, index: int) -> bool:
+    """Return True when a block token starts at ``text[index]``."""
+
+    if index >= len(text):
+        return False
+
+    if text[index] == "-":
+        return (
+            index + 2 < len(text)
+            and text[index + 1] in "123"
+            and text[index + 2].lower() == "d"
+        )
+
+    return index + 1 < len(text) and text[index] in "123" and text[index + 1].lower() == "d"
+
+
+def _parse_d6_target_from(text: str, index: int) -> tuple[RollTarget, int]:
+    """Parse one compact D6 token from ``text`` starting at ``index``."""
+
+    if index >= len(text) or text[index] < "1" or text[index] > "6":
+        raise ValueError(
+            f"Invalid roll target near {text[index:]!r}. "
+            "Use values like 2+, 3++, 6+ or shorthand like 224s3."
+        )
+
+    threshold = int(text[index])
+    local_rerolls = 0
+    next_index = index + 1
+
+    if text[next_index : next_index + 2] == "++":
+        local_rerolls = 1
+        next_index += 2
+    elif next_index < len(text) and text[next_index] == "+":
+        next_index += 1
+    elif next_index < len(text) and text[next_index].lower() == "s":
+        local_rerolls = 1
+        next_index += 1
+
+    return RollTarget(threshold=threshold, local_rerolls=local_rerolls), next_index
 
 
 def _split_roll_tokens(raw_text: str) -> list[str]:
@@ -137,12 +270,109 @@ def _parse_threshold(token: str) -> RollTarget:
     return RollTarget(threshold=int(match.group(1)), local_rerolls=local_rerolls)
 
 
+def _parse_block_dice_token(token: str) -> BlockDiceTarget:
+    """Parse a block dice token such as 2d+, -3d*, 1d, or 2d+++ into a BlockDiceTarget.
+
+    An optional ``++`` suffix at the very end signals one built-in reroll of the
+    whole pool (Brawler skill).  A ``++``-tagged step cannot also consume a
+    shared team reroll.
+    """
+
+    token = token.strip()
+    if not token:
+        raise ValueError("Invalid block dice token: ''.")
+
+    target, next_index = _parse_block_target_from(token, 0)
+    if next_index != len(token):
+        raise ValueError(
+            f"Invalid block dice token: {token!r}. "
+            "Use e.g. 1d, 2d+, 3d*, -2d, -3d-, 2d+-, or 2d+++ for Brawler."
+        )
+    return target
+
+
+def _parse_block_target_from(text: str, index: int) -> tuple[BlockDiceTarget, int]:
+    """Parse one block token from ``text`` starting at ``index``."""
+
+    start = index
+    negative = False
+
+    if text[index] == "-":
+        negative = True
+        index += 1
+
+    if index >= len(text) or text[index] not in "123":
+        raise ValueError(
+            f"Invalid block dice token near {text[start:]!r}. "
+            "Use e.g. 1d, 2d+, 3d*, -2d, -3d-, 2d+-, or 2d+++ for Brawler."
+        )
+    dice_count = int(text[index])
+    index += 1
+
+    if index >= len(text) or text[index].lower() != "d":
+        raise ValueError(
+            f"Invalid block dice token near {text[start:]!r}. "
+            "Use e.g. 1d, 2d+, 3d*, -2d, -3d-, 2d+-, or 2d+++ for Brawler."
+        )
+    index += 1
+
+    outcome = ""
+    local_rerolls = 0
+
+    # Two-character outcome forms first.
+    if text[index : index + 2] in ("+-", "-+"):
+        outcome = "+-"
+        index += 2
+    # Single-character non-plus outcomes.
+    elif index < len(text) and text[index] in "*/-":
+        outcome = text[index]
+        index += 1
+    # Plus-run forms:
+    #   +   => outcome '+'
+    #   ++  => default outcome + Brawler
+    #   +++ => outcome '+' + Brawler
+    elif index < len(text) and text[index] == "+":
+        plus_count = 0
+        while index < len(text) and text[index] == "+":
+            plus_count += 1
+            index += 1
+
+        if plus_count == 1:
+            outcome = "+"
+        elif plus_count == 2:
+            local_rerolls = 1
+        elif plus_count == 3:
+            outcome = "+"
+            local_rerolls = 1
+        else:
+            raise ValueError(
+                f"Invalid block dice token near {text[start:index]!r}. "
+                "Too many '+' markers after 'd'."
+            )
+
+    # Optional trailing Brawler for outcomes other than pure plus-run forms above.
+    if local_rerolls == 0 and text[index : index + 2] == "++":
+        local_rerolls = 1
+        index += 2
+
+    return (
+        BlockDiceTarget(
+            dice_count=dice_count,
+            negative=negative,
+            outcome=outcome,
+            local_rerolls=local_rerolls,
+        ),
+        index,
+    )
+
+
 class RollSequenceCalculator:
-    def calculate(self, sequence: list[RollTarget], max_global_rerolls: int = 2) -> CalculationResult:
+    def calculate(self, sequence: list[Step], max_global_rerolls: int = 2) -> CalculationResult:
         """Calculate base and shared-reroll odds for an ordered roll sequence.
 
         The method evaluates the chain multiple times: once for each available
-        global reroll budget from 0 up to `max_global_rerolls`.
+        global reroll budget from 0 up to `max_global_rerolls`.  `sequence` may
+        contain a mix of `RollTarget` and `BlockDiceTarget` steps.
         """
 
         if not sequence:
@@ -171,12 +401,18 @@ class RollSequenceCalculator:
         for index, target in enumerate(sequence):
             # Store the per-step view separately from the dynamic-programming state so
             # the GUI can explain each roll in plain terms.
-            single_attempt_probability = self.roll_probability(target.threshold)
-            roll_probability = self.roll_probability_with_local_rerolls(target.threshold, target.local_rerolls)
+            if isinstance(target, BlockDiceTarget):
+                single_attempt_probability = target.base_probability
+                roll_probability = 1 - (1 - single_attempt_probability) ** (target.local_rerolls + 1)
+                threshold: int | None = None
+            else:
+                single_attempt_probability = self.roll_probability(target.threshold)
+                roll_probability = self.roll_probability_with_local_rerolls(target.threshold, target.local_rerolls)
+                threshold = target.threshold
             steps.append(
                 StepResult(
                     token=target.token,
-                    threshold=target.threshold,
+                    threshold=threshold,
                     local_rerolls=target.local_rerolls,
                     single_attempt_probability=single_attempt_probability,
                     roll_probability=roll_probability,
@@ -219,22 +455,26 @@ class RollSequenceCalculator:
         return 1 - ((1 - single_attempt_probability) ** (local_rerolls + 1))
 
     @staticmethod
-    def _advance_distribution(distribution: list[float], target: RollTarget) -> list[float]:
-        """Advance the shared-reroll state by one roll.
+    def _advance_distribution(distribution: list[float], target: Step) -> list[float]:
+        """Advance the shared-reroll state by one roll or block dice pool.
 
         The current distribution represents successful paths only.
 
-        A die with ++ uses its own reroll and cannot also spend a shared RR.
-        A die without ++ may consume at most one shared RR after a failed first
+        A step with ++ uses its own reroll and cannot also spend a shared RR.
+        A step without ++ may consume at most one shared RR after a failed first
         attempt. Paths that still fail after that are omitted because the chain ends.
         """
 
         next_distribution = [0.0] * len(distribution)
-        single_attempt_probability = RollSequenceCalculator.roll_probability(target.threshold)
-        local_roll_probability = RollSequenceCalculator.roll_probability_with_local_rerolls(
-            target.threshold,
-            target.local_rerolls,
-        )
+        if isinstance(target, BlockDiceTarget):
+            single_attempt_probability = target.base_probability
+            local_roll_probability = 1 - (1 - single_attempt_probability) ** (target.local_rerolls + 1)
+        else:
+            single_attempt_probability = RollSequenceCalculator.roll_probability(target.threshold)
+            local_roll_probability = RollSequenceCalculator.roll_probability_with_local_rerolls(
+                target.threshold,
+                target.local_rerolls,
+            )
 
         for rerolls_remaining, state_probability in enumerate(distribution):
             if state_probability == 0:
