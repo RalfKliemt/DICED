@@ -2,15 +2,37 @@
 
 from __future__ import annotations
 
-from flask import Flask, render_template, request
+import sys
+from pathlib import Path
 
-from .core import CalculationResult, RollSequenceCalculator, parse_roll_sequence
+from flask import Flask, render_template, request, session
+
+try:
+    from .core import CalculationResult, RollSequenceCalculator, parse_roll_sequence
+except ImportError:
+    # Support direct execution: `python src/diced/web.py`.
+    src_dir = Path(__file__).resolve().parents[1]
+    if str(src_dir) not in sys.path:
+        sys.path.insert(0, str(src_dir))
+    from diced.core import CalculationResult, RollSequenceCalculator, parse_roll_sequence
 
 
 def format_percent(probability: float) -> str:
-    """Format a probability as a percentage string with two decimals."""
+    """Format a probability as a percentage string with one decimal."""
 
-    return f"{probability * 100:.2f}%"
+    return f"{probability * 100:.1f}%"
+
+
+def build_log_line(result: CalculationResult, total_width: int = 66) -> str:
+    """Return a dot-leader log line similar to the desktop GUI."""
+
+    sequence = " ".join(step.token for step in result.steps)
+    base = format_percent(result.final_probability)
+    rr1 = format_percent(result.probability_with_global_rerolls(1))
+    rr2 = format_percent(result.probability_with_global_rerolls(2))
+    result_str = f"{base} ({rr1} / {rr2})"
+    dots = max(6, total_width - len(sequence) - len(result_str))
+    return f"{sequence} {'.' * dots} {result_str}"
 
 
 def build_result_view(result: CalculationResult) -> dict[str, object]:
@@ -26,6 +48,7 @@ def build_result_view(result: CalculationResult) -> dict[str, object]:
         "rr2": rr2,
         "rr_pair": f"({rr1} / {rr2})",
         "parsed_tokens": [step.token for step in result.steps],
+        "log_line": build_log_line(result),
         "steps": [
             {
                 "index": index,
@@ -45,6 +68,7 @@ def create_app() -> Flask:
     """Create the Flask application."""
 
     app = Flask(__name__)
+    app.config["SECRET_KEY"] = "diced-dev-secret"
     calculator = RollSequenceCalculator()
 
     @app.get("/")
@@ -52,20 +76,27 @@ def create_app() -> Flask:
         sequence_text = request.args.get("sequence", "").strip()
         error = ""
         result_view = None
+        log_lines = session.get("log_lines", [])
 
         if sequence_text:
             try:
                 sequence = parse_roll_sequence(sequence_text)
                 result = calculator.calculate(sequence, max_global_rerolls=2)
                 result_view = build_result_view(result)
+                log_lines.append(result_view["log_line"])
             except ValueError as exc:
                 error = str(exc)
+                log_lines.append(f"{sequence_text}: ERROR ({error})")
+
+            session["log_lines"] = log_lines[-7:]
+            log_lines = session["log_lines"]
 
         return render_template(
             "index.html",
             sequence_text=sequence_text,
             error=error,
             result=result_view,
+            log_lines=log_lines,
             examples=["224s3", "3++ 4+ 5+", "2+ 2d+ 4+", "2+, 3+, 4+"],
         )
 
@@ -79,3 +110,7 @@ def main() -> None:
     """Run the development web server."""
 
     app.run(debug=True)
+
+
+if __name__ == "__main__":
+    main()

@@ -36,14 +36,14 @@ a {
   min-height: 100vh;
   display: grid;
   place-items: center;
-  padding: 1rem;
+  padding: 16px;
 }
 
 .coaster-shadow,
 .coaster {
   grid-area: 1 / 1;
-  width: min(92vmin, 760px);
-  aspect-ratio: 1;
+  width: 680px;
+  height: 680px;
   border-radius: 9%;
 }
 
@@ -59,7 +59,7 @@ a {
   background: var(--coaster);
   border: 2px solid var(--line);
   overflow: hidden;
-  padding: 4.5% 6%;
+  padding: 30px 40px;
   box-shadow: 0 4px 0 rgba(255, 255, 255, 0.45) inset;
 }
 
@@ -139,7 +139,7 @@ a {
 .coaster-header h1 {
   margin: 0;
   font-family: Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif;
-  font-size: clamp(2rem, 5.1vmin, 3.3rem);
+  font-size: 128px;
   letter-spacing: 0.04em;
   color: var(--accent);
 }
@@ -153,20 +153,20 @@ a {
 
 .entry-wrap {
   position: relative;
-  width: min(68%, 460px);
+  width: 460px;
 }
 
 .entry-wrap input {
   width: 100%;
-  height: clamp(50px, 7vmin, 64px);
+  height: 56px;
   border: 0;
   border-radius: 16px;
   background: #f8f8f7;
   color: var(--ink);
   text-align: center;
-  font-size: clamp(1.2rem, 3vmin, 1.8rem);
+  font-size: 28px;
   font-weight: 700;
-  padding: 0 6.6rem 0 1rem;
+  padding: 0 7.5rem 0 1rem;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.02);
 }
 
@@ -199,7 +199,9 @@ a {
   display: grid;
   place-items: center;
   align-content: center;
-  gap: 0.55rem;
+  gap: 1rem;
+  margin-top: 20px;
+  margin-bottom: 24px;
   position: relative;
   z-index: 1;
 }
@@ -207,16 +209,13 @@ a {
 .main-result,
 .rr-result,
 .message-line,
-.log-copy,
-th,
-td,
-.example-chip {
+.log-line {
   background: var(--coaster);
 }
 
 .main-result {
   margin: 0;
-  font-size: clamp(3rem, 8.2vmin, 4.8rem);
+  font-size: 76px;
   font-weight: 700;
   color: var(--blue);
   line-height: 1;
@@ -224,16 +223,16 @@ td,
 
 .rr-result {
   margin: 0;
-  font-size: clamp(1.2rem, 2.7vmin, 2rem);
+  font-size: 32px;
   font-weight: 700;
   color: var(--blue);
 }
 
 .message-line {
   margin: 0;
-  max-width: 72%;
+  max-width: 480px;
   text-align: center;
-  font-size: clamp(0.88rem, 1.8vmin, 1rem);
+  font-size: 16px;
   color: var(--muted);
 }
 
@@ -246,105 +245,31 @@ td,
 .log-panel {
   position: relative;
   z-index: 1;
-  display: grid;
-  grid-template-rows: auto auto 1fr;
-  align-content: start;
-  width: min(74%, 640px);
-  margin: 0 auto;
+  display: block;
+  width: 620px;
+  margin: 12px auto 0;
   background: var(--coaster);
+  border: 0;
+  min-height: 182px;
 }
 
-.example-row {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.4rem;
-  margin-bottom: 0.55rem;
-}
-
-.example-chip {
-  text-decoration: none;
-  color: var(--muted);
-  font-size: 0.82rem;
-  border-bottom: 1px solid transparent;
-}
-
-.example-chip:hover {
-  border-bottom-color: var(--dots);
-}
-
-.log-copy {
+.log-line {
   margin: 0;
-  text-transform: uppercase;
-  font-size: 0.75rem;
-  letter-spacing: 0.12em;
-  text-align: center;
+  padding: 2px 4px;
+  font-family: Menlo, Monaco, Consolas, "Courier New", monospace;
+  font-size: 14px;
+  line-height: 1.25;
+  letter-spacing: 0.01em;
+  white-space: pre;
+  overflow-x: auto;
+  overflow-y: hidden;
   color: var(--muted);
 }
 
-.table-wrap {
-  overflow: auto;
-  margin-top: 0.45rem;
+.error-line {
+  color: var(--accent);
 }
 
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.82rem;
-}
-
-th,
-td {
-  text-align: center;
-  padding: 0.42rem 0.28rem;
-  border-bottom: 0;
-}
-
-th {
-  position: sticky;
-  top: 0;
-  font-size: 0.68rem;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-}
-
-tbody tr td:nth-child(1) {
-  font-weight: 700;
-}
-
-@media (max-width: 800px) {
-  .coaster,
-  .coaster-shadow {
-    width: min(96vmin, 760px);
-  }
-
-  .log-panel {
-    width: min(82%, 640px);
-  }
-}
-
-@media (max-width: 560px) {
-  .stage {
-    padding: 0.4rem;
-  }
-
-  .coaster {
-    grid-template-rows: 0.15fr 0.18fr 0.31fr 0.36fr;
-    padding: 5% 4%;
-  }
-
-  .entry-wrap,
-  .log-panel,
-  .message-line {
-    width: 88%;
-    max-width: none;
-  }
-
-  .example-row {
-    gap: 0.3rem 0.5rem;
-  }
-
-  table {
-    font-size: 0.74rem;
-  }
+.placeholder-line {
+  color: var(--dots);
 }
