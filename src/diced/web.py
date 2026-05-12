@@ -120,7 +120,7 @@ def create_app() -> Flask:
             error=error,
             result=result_view,
             log_lines=log_lines,
-            examples=["224s3", "3++ 4+ 5+", "2+ 2d+ 4+", "2+, 3+, 4+"],
+            examples=["3++ 3+", "2d+", "3++ 2+ 2d av9k"],
         )
 
     return app

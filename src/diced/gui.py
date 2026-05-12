@@ -44,7 +44,7 @@ class DicedApp:
         self.shadow_dy = 12
 
         self.calculator = RollSequenceCalculator()
-        self.sequence_var = tk.StringVar(value="3++")
+        self.sequence_var = tk.StringVar(value="3++ 2+ 2d av9k")
         self.result_main_var = tk.StringVar(value="")
         self.result_rr_var = tk.StringVar(value="")
         self.log_lines: list[str] = []
