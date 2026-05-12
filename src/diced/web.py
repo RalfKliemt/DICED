@@ -23,10 +23,39 @@ def format_percent(probability: float) -> str:
     return f"{probability * 100:.1f}%"
 
 
+def format_token_for_display(token: str) -> str:
+    """Format a token for display, converting block dice notation.
+    
+    Examples:
+        "2d+" → "2d (Block)"
+        "3d-" → "3d (Push)"
+        "1d*" → "1d (Pow)"
+        "2d/" → "2d (Push Only)"
+        "2+" → "2+"  (unchanged)
+    """
+    # Map block dice modifiers to display names
+    modifier_map = {
+        "+": "Block",
+        "-": "Push",
+        "*": "Pow",
+        "/": "Push Only",
+    }
+    
+    # Check if token ends with a block dice modifier
+    if len(token) >= 2 and token[-1] in modifier_map:
+        last_char = token[-1]
+        base_token = token[:-1]
+        # Only transform if it looks like block dice (contains 'd')
+        if "d" in base_token:
+            return f"{base_token} ({modifier_map[last_char]})"
+    
+    return token
+
+
 def build_log_line(result: CalculationResult, total_width: int = 66) -> str:
     """Return a dot-leader log line similar to the desktop GUI."""
 
-    sequence = " ".join(step.token for step in result.steps)
+    sequence = " ".join(format_token_for_display(step.token) for step in result.steps)
     base = format_percent(result.final_probability)
     rr1 = format_percent(result.probability_with_global_rerolls(1))
     rr2 = format_percent(result.probability_with_global_rerolls(2))
@@ -47,7 +76,7 @@ def build_result_view(result: CalculationResult) -> dict[str, object]:
         "rr1": rr1,
         "rr2": rr2,
         "rr_pair": f"{rr1} / {rr2}",
-        "parsed_tokens": [step.token for step in result.steps],
+        "parsed_tokens": [format_token_for_display(step.token) for step in result.steps],
         "log_line": build_log_line(result),
         "steps": [
             {

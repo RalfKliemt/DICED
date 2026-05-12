@@ -2,7 +2,7 @@
 
 import unittest
 
-from diced.web import create_app, format_percent
+from diced.web import create_app, format_percent, format_token_for_display
 
 
 class WebInterfaceTests(unittest.TestCase):
@@ -44,6 +44,41 @@ class WebFormattingTests(unittest.TestCase):
 
     def test_formats_percent_with_one_decimal(self) -> None:
         self.assertEqual(format_percent(2 / 3), "66.7%")
+
+
+class TokenFormattingTests(unittest.TestCase):
+    """Verify block dice tokens display correctly."""
+
+    def test_formats_block_dice_plus_modifier(self) -> None:
+        """Block dice with + should display as (Block)."""
+        self.assertEqual(format_token_for_display("2d+"), "2d (Block)")
+        self.assertEqual(format_token_for_display("3d+"), "3d (Block)")
+        self.assertEqual(format_token_for_display("1d+"), "1d (Block)")
+
+    def test_formats_block_dice_push_modifier(self) -> None:
+        """Block dice with - should display as (Push)."""
+        self.assertEqual(format_token_for_display("2d-"), "2d (Push)")
+        self.assertEqual(format_token_for_display("3d-"), "3d (Push)")
+
+    def test_formats_block_dice_pow_only_modifier(self) -> None:
+        """Block dice with * should display as (Pow)."""
+        self.assertEqual(format_token_for_display("2d*"), "2d (Pow)")
+
+    def test_formats_block_dice_push_only_modifier(self) -> None:
+        """Block dice with / should display as (Push Only)."""
+        self.assertEqual(format_token_for_display("2d/"), "2d (Push Only)")
+
+    def test_leaves_normal_dice_unchanged(self) -> None:
+        """Normal dice tokens should not be modified."""
+        self.assertEqual(format_token_for_display("2+"), "2+")
+        self.assertEqual(format_token_for_display("3++"), "3++")
+        self.assertEqual(format_token_for_display("4+"), "4+")
+
+    def test_leaves_non_block_tokens_unchanged(self) -> None:
+        """Non-dice tokens should remain unchanged."""
+        self.assertEqual(format_token_for_display("av9"), "av9")
+        self.assertEqual(format_token_for_display("av9im"), "av9im")
+
 
 
 if __name__ == "__main__":
