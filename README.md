@@ -1,15 +1,13 @@
 ---
 title: DICED
-emoji: 👀
-colorFrom: blue
-colorTo: blue
-sdk: gradio
-python_version: 3.14
-app_file: app.py
+emoji: 🎲
+colorFrom: red
+colorTo: yellow
+sdk: docker
+app_port: 7860
 pinned: false
 license: gpl-3.0
 short_description: Calculationg sequential BloodBowl dice roll chances
-sdk_version: 6.17.3
 ---
 
 # DICED
