@@ -10,6 +10,8 @@ import os
 import plistlib
 import shutil
 import stat
+import subprocess
+import sys
 from pathlib import Path
 
 
@@ -23,8 +25,41 @@ APP_DIR = DIST_DIR / f"{APP_NAME}.app"
 CONTENTS_DIR = APP_DIR / "Contents"
 MACOS_DIR = CONTENTS_DIR / "MacOS"
 RESOURCES_DIR = CONTENTS_DIR / "Resources"
-ICON_FILE = PROJECT_ROOT / "assets" / "DICED.icns"
+ICON_SET_DIR = PROJECT_ROOT / "assets" / "DICED.iconset"
 ICON_NAME = "DICED.icns"
+
+
+def _generate_icns(resources_dir: Path) -> Path:
+    """Generate .icns dynamically from .iconset and place it directly into the app bundle.
+    
+    The .icns file is never stored on disk outside the build — it's created fresh
+    each time and only lives inside Contents/Resources/ of the app bundle.
+    
+    Returns the path to the generated .icns file, or None if generation failed.
+    """
+    icns_path = resources_dir / ICON_NAME
+    
+    if not ICON_SET_DIR.exists():
+        print("  Warning: DICED.iconset not found.", file=sys.stderr)
+        return None
+    
+    print("  Generating .icns from iconset...")
+    try:
+        result = subprocess.run(
+            ["iconutil", "-c", "icns", str(ICON_SET_DIR), "-o", str(icns_path)],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0 and icns_path.exists():
+            print("  .icns generated and bundled.")
+            return icns_path
+        else:
+            stderr = result.stderr.strip()
+            print(f"  Warning: iconutil failed: {stderr}", file=sys.stderr)
+    except FileNotFoundError:
+        print("  Warning: iconutil not found (macOS only).", file=sys.stderr)
+    
+    return None
 
 
 def _resolve_python() -> str:
@@ -127,9 +162,8 @@ def build_app_bundle() -> Path:
     mode = launcher_path.stat().st_mode
     launcher_path.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
-    # Copy icon if it exists
-    if ICON_FILE.exists():
-        shutil.copy2(ICON_FILE, RESOURCES_DIR / ICON_NAME)
+    # Generate .icns dynamically and bundle it directly into Resources
+    icns_path = _generate_icns(RESOURCES_DIR)
 
     info_plist = {
         "CFBundleName": APP_NAME,
