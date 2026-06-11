@@ -9,6 +9,7 @@ app_file: app.py
 pinned: false
 license: gpl-3.0
 short_description: Calculationg sequential BloodBowl dice roll chances
+sdk_version: 6.17.3
 ---
 
 # DICED
