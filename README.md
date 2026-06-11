@@ -1,3 +1,13 @@
+---
+title: DICED
+emoji: 🎲
+colorFrom: blue
+colorTo: blue
+sdk: static
+app_file: web_app.py
+pinned: false
+---
+
 # DICED
 
 Small Python app for calculating the success chance of consecutive dice rolls on a D6.
