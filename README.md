@@ -1,11 +1,13 @@
 ---
 title: DICED
-emoji: 🎲
+emoji: 👀
 colorFrom: blue
 colorTo: blue
 sdk: static
 app_file: web_app.py
 pinned: false
+license: gpl-3.0
+short_description: Calculationg sequential BloodBowl dice roll chances
 ---
 
 # DICED
