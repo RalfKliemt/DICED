@@ -12,6 +12,9 @@ body {
 /* Header sits under the notch / status bar when installed full-screen. */
 .card-header {
   padding-top: max(12px, env(safe-area-inset-top, 0px));
+  /* The padding already clears the notch; sticking at the inset as well
+     pushed the bar down over the results in the home-screen app. */
+  top: 0;
 }
 body.compact .card-header { padding-top: max(4px, env(safe-area-inset-top, 0px)); }
 
