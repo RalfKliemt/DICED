@@ -2,19 +2,34 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
 from flask import Flask, render_template, request
 
 try:
-    from .core import CalculationResult, RollSequenceCalculator, parse_roll_sequence
+    from .core import (
+        CalculationResult,
+        RollSequenceCalculator,
+        SequenceOptions,
+        apply_options,
+        armour_outcomes,
+        parse_sequence,
+    )
 except ImportError:
     # Support direct execution: `python src/diced/web.py`.
     src_dir = Path(__file__).resolve().parents[1]
     if str(src_dir) not in sys.path:
         sys.path.insert(0, str(src_dir))
-    from diced.core import CalculationResult, RollSequenceCalculator, parse_roll_sequence
+    from diced.core import (
+        CalculationResult,
+        RollSequenceCalculator,
+        SequenceOptions,
+        apply_options,
+        armour_outcomes,
+        parse_sequence,
+    )
 
 
 def format_percent(probability: float) -> str:
@@ -28,34 +43,47 @@ def format_token_for_display(token: str) -> str:
     
     Examples:
         "2d+" → "2d (Block)"
-        "3d-" → "3d (Push)"
+        "3d-" → "3d (No Turnover)"
         "1d*" → "1d (Pow)"
         "2d/" → "2d (Push Only)"
         "2+" → "2+"  (unchanged)
     """
-    # Map block dice modifiers to display names
-    modifier_map = {
-        "+": "Block",
-        "-": "Push",
-        "*": "Pow",
-        "/": "Push Only",
-    }
-    
-    # Check if token ends with a block dice modifier
-    if len(token) >= 2 and token[-1] in modifier_map:
-        last_char = token[-1]
-        base_token = token[:-1]
-        # Only transform if it looks like block dice (contains 'd')
-        if "d" in base_token:
-            return f"{base_token} ({modifier_map[last_char]})"
-    
-    return token
+    match = re.fullmatch(r"(-?[123]d)(\+-|-\+|[+*/-])?(\+\+)?", token)
+    if not match:
+        return token
+    base, outcome, brawler = match.groups()
+    labels = {
+        "+": ["Block"],
+        "-": ["No Turnover"],
+        "*": ["Pow"],
+        "/": ["Push Only"],
+        "+-": ["Block", "No Turnover"],
+        "-+": ["Block", "No Turnover"],
+    }.get(outcome or "", [])
+    if brawler:
+        labels.append("Brawler")
+    return f"{base} ({', '.join(labels)})" if labels else base
 
 
-def build_log_line(result: CalculationResult, total_width: int = 66) -> str:
+TOGGLES = (
+    ("block", "Block"),
+    ("pro", "Pro"),
+    ("brawler", "Brawler"),
+    ("mighty_blow", "MB"),
+    ("stunty", "vs Stunty"),
+)
+
+
+def build_log_line(
+    result: CalculationResult,
+    total_width: int = 66,
+    options: SequenceOptions | None = None,
+) -> str:
     """Return a dot-leader log line similar to the desktop GUI."""
 
     sequence = " ".join(format_token_for_display(step.token) for step in result.steps)
+    if options and options.labels:
+        sequence += f" [{', '.join(options.labels)}]"
     base = format_percent(result.final_probability)
     rr1 = format_percent(result.probability_with_global_rerolls(1))
     rr2 = format_percent(result.probability_with_global_rerolls(2))
@@ -64,7 +92,19 @@ def build_log_line(result: CalculationResult, total_width: int = 66) -> str:
     return f"{sequence} {'.' * dots} {result_str}"
 
 
-def build_result_view(result: CalculationResult) -> dict[str, object]:
+def format_armour_outcomes(outcomes: dict[str, dict[int, float]] | None) -> str:
+    """One line like 'Break 31.3% · KO 21.1% · CAS 11.6%' (no team re-rolls)."""
+
+    if not outcomes:
+        return ""
+    return " · ".join(f"{label} {format_percent(values[0])}" for label, values in outcomes.items())
+
+
+def build_result_view(
+    result: CalculationResult,
+    options: SequenceOptions | None = None,
+    armour: dict[str, dict[int, float]] | None = None,
+) -> dict[str, object]:
     """Convert calculator output into a template-friendly structure."""
 
     base = format_percent(result.probability_with_global_rerolls(0))
@@ -77,7 +117,9 @@ def build_result_view(result: CalculationResult) -> dict[str, object]:
         "rr2": rr2,
         "rr_pair": f"{rr1} / {rr2}",
         "parsed_tokens": [format_token_for_display(step.token) for step in result.steps],
-        "log_line": build_log_line(result),
+        "log_line": build_log_line(result, options=options),
+        "armour": format_armour_outcomes(armour),
+        "options": options.labels if options else [],
         "steps": [
             {
                 "index": index,
@@ -102,21 +144,27 @@ def create_app() -> Flask:
     @app.get("/")
     def index() -> str:
         sequence_text = request.args.get("sequence", "").strip()
+        toggles = {name: request.args.get(name) == "1" for name, _label in TOGGLES}
         error = ""
         result_view = None
         log_lines: list[str] = []
 
         if sequence_text:
             try:
-                sequence = parse_roll_sequence(sequence_text)
-                result = calculator.calculate(sequence, max_global_rerolls=2)
-                result_view = build_result_view(result)
+                parsed, typed = parse_sequence(sequence_text)
+                options = SequenceOptions(**toggles).merged(typed)
+                sequence = apply_options(parsed, options)
+                result = calculator.calculate(sequence, max_global_rerolls=2, pro=options.pro)
+                armour = armour_outcomes(calculator, sequence, options)
+                result_view = build_result_view(result, options=options, armour=armour)
             except ValueError as exc:
                 error = str(exc)
 
         return render_template(
             "index.html",
             sequence_text=sequence_text,
+            toggles=toggles,
+            toggle_labels=TOGGLES,
             error=error,
             result=result_view,
             log_lines=log_lines,

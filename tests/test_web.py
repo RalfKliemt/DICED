@@ -38,6 +38,14 @@ class WebInterfaceTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Invalid roll target", response.data)
 
+    def test_pro_toggle(self) -> None:
+        response = self.client.get("/?sequence=1d%20av9&block=1&brawler=1&mighty_blow=1")
+        self.assertIn(b"Break", response.data)
+        self.assertIn(b"Block, Brawler, MB", response.data)
+        response = self.client.get("/?sequence=4%2B%204%2B&pro=1")
+        self.assertIn(b"41.7%", response.data)
+        self.assertIn(b"[Pro]", response.data)
+
 
 class WebFormattingTests(unittest.TestCase):
     """Keep shared formatting helpers predictable."""
@@ -56,9 +64,9 @@ class TokenFormattingTests(unittest.TestCase):
         self.assertEqual(format_token_for_display("1d+"), "1d (Block)")
 
     def test_formats_block_dice_push_modifier(self) -> None:
-        """Block dice with - should display as (Push)."""
-        self.assertEqual(format_token_for_display("2d-"), "2d (Push)")
-        self.assertEqual(format_token_for_display("3d-"), "3d (Push)")
+        """Block dice with - should display as (No Turnover)."""
+        self.assertEqual(format_token_for_display("2d-"), "2d (No Turnover)")
+        self.assertEqual(format_token_for_display("3d-"), "3d (No Turnover)")
 
     def test_formats_block_dice_pow_only_modifier(self) -> None:
         """Block dice with * should display as (Pow)."""

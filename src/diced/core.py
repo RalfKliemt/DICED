@@ -59,7 +59,7 @@ _BLOCK_OUTCOME_FACES: dict[str, int] = {
     "": 2,    # POW + POW/SKULL  ("5+" equivalent)
     "+": 3,   # POW + POW/SKULL + BOTH DOWN  ("4+")
     "*": 1,   # POW only  ("6+")
-    "-": 4,   # No turnover: POW + BOTH DOWN + PUSH×2  ("3+")
+    "-": 4,   # No turnover: POW + POW/SKULL + PUSH×2  ("3+")
     "+-": 5,  # No skull: all except SKULL  ("2+")
     "/": 2,   # Push only: PUSH×2  ("5+" by face count)
 }
@@ -83,7 +83,7 @@ class BlockDiceTarget:
     `negative` is True for -2d/-3d where the defender picks: all dice must show
     the desired face.  False means attacker picks: at least one die must match.
     `outcome` is one of '', '+', '*', '-', '+-', '/'.
-    `local_rerolls` is 0 or 1 and works like on a D6 step (whole pool reroll).
+    `local_rerolls` is 0 or 1; 1 means Brawler (re-roll one unwanted Both Down die).
     """
 
     dice_count: int
@@ -144,6 +144,8 @@ class ArmorValueTarget:
 
         has_m = self.injury_suffix.endswith("m")
         core = self.injury_suffix[:-1] if has_m else self.injury_suffix
+        if not core:
+            return f"av{self.target} (mb)"
         label = {
             "k": "ko",
             "i": "injury",
@@ -196,6 +198,9 @@ def _normalize_injury_suffix(suffix: str) -> str:
     has_m = m_count == 1
     core = lowered.replace("m", "")
     core = {"sk": "ks", "is": "si"}.get(core, core)
+    if core in ("", "s"):
+        # No injury roll: Stunty is irrelevant, MB can only help the armour roll.
+        return "m" if has_m else ""
 
     if core not in _INJURY_BASE_TARGETS:
         raise ValueError(
@@ -214,15 +219,40 @@ def injury_roll_probability(suffix: str) -> float:
 
     has_m = normalized.endswith("m")
     core = normalized[:-1] if has_m else normalized
+    if not core:
+        return 1.0
     target = _INJURY_BASE_TARGETS[core] - (1 if has_m else 0)
     successful = sum(1 for die1 in range(1, 7) for die2 in range(1, 7) if die1 + die2 >= target)
     return successful / 36
 
 
-def armor_and_injury_probability(target: ArmorValueTarget) -> float:
-    """Probability for armor break plus optional injury roll."""
+def _two_d6_at_least(target: int) -> float:
+    return sum(1 for d1 in range(1, 7) for d2 in range(1, 7) if d1 + d2 >= target) / 36
 
-    return armor_break_probability(target.target) * injury_roll_probability(target.injury_suffix)
+
+def armor_and_injury_probability(target: ArmorValueTarget) -> float:
+    """Probability for armor break plus optional injury roll.
+
+    Mighty Blow (+1) modifies either the armour roll or the injury roll, chosen
+    after seeing the armour roll: an armour roll exactly one short is pushed
+    through with MB (injury then unmodified); a roll that already breaks keeps
+    MB for the injury roll.
+    """
+
+    normalized = _normalize_injury_suffix(target.injury_suffix)
+    if not normalized.endswith("m"):
+        return armor_break_probability(target.target) * injury_roll_probability(normalized)
+
+    core = normalized[:-1]
+    if not core:
+        return _two_d6_at_least(target.target - 1)
+    injury_target = _INJURY_BASE_TARGETS[core]
+    broken_clean = _two_d6_at_least(target.target)
+    exactly_one_short = _two_d6_at_least(target.target - 1) - broken_clean
+    return (
+        broken_clean * _two_d6_at_least(injury_target - 1)
+        + exactly_one_short * _two_d6_at_least(injury_target)
+    )
 
 
 Step = Union[RollTarget, BlockDiceTarget, ArmorValueTarget]
@@ -281,6 +311,176 @@ def parse_roll_sequence(raw_text: str) -> list[Step]:
         result.extend(_parse_mixed_part(part))
 
     return result
+
+
+def parse_roll_sequence_with_pro(raw_text: str) -> tuple[list[Step], bool]:
+    """Parse a sequence and detect Pro anywhere in it.
+
+    Any ``p`` marks the whole sequence as having Pro: a standalone ``p`` token
+    (``2+ p 4+``) as well as a suffix on a die (``3+p``, ``3p``). The returned
+    steps have the per-die ``p`` removed; pass the flag as ``pro=`` to
+    :meth:`RollSequenceCalculator.calculate`.
+    """
+
+    parts = [part for part in re.split(r"[,\s]+", raw_text.strip()) if part]
+    has_pro = any(part.lower() == "p" for part in parts)
+    remaining = " ".join(part for part in parts if part.lower() != "p")
+    if not remaining:
+        raise ValueError("Enter at least one target roll such as 2+, 3+, 4+.")
+
+    steps: list[Step] = []
+    for step in parse_roll_sequence(remaining):
+        if isinstance(step, RollTarget) and step.weighted_reroll:
+            has_pro = True
+            step = RollTarget(threshold=step.threshold, local_rerolls=step.local_rerolls)
+        steps.append(step)
+    return steps, has_pro
+
+
+@dataclass(frozen=True)
+class SequenceOptions:
+    """Skills that apply to the whole sequence."""
+
+    block: bool = False
+    pro: bool = False
+    brawler: bool = False
+    mighty_blow: bool = False
+    stunty: bool = False
+
+    def merged(self, other: "SequenceOptions") -> "SequenceOptions":
+        return SequenceOptions(
+            block=self.block or other.block,
+            pro=self.pro or other.pro,
+            brawler=self.brawler or other.brawler,
+            mighty_blow=self.mighty_blow or other.mighty_blow,
+            stunty=self.stunty or other.stunty,
+        )
+
+    @property
+    def labels(self) -> list[str]:
+        names = [
+            ("Block", self.block),
+            ("Pro", self.pro),
+            ("Brawler", self.brawler),
+            ("MB", self.mighty_blow),
+            ("vs Stunty", self.stunty),
+        ]
+        return [name for name, on in names if on]
+
+
+def parse_sequence(raw_text: str) -> tuple[list[Step], SequenceOptions]:
+    """Parse a sequence and pick up sequence-wide skill letters.
+
+    ``p`` anywhere (standalone or as a die suffix) means Pro, ``b`` anywhere
+    means Brawler. Both apply to the whole sequence.
+    """
+
+    has_brawler = "b" in raw_text.lower()
+    cleaned = re.sub(r"[bB]", " ", raw_text)
+    cleaned, has_stunty = _extract_stunty(cleaned)
+    steps, has_pro = parse_roll_sequence_with_pro(cleaned)
+    return steps, SequenceOptions(pro=has_pro, brawler=has_brawler, stunty=has_stunty)
+
+
+def _extract_stunty(text: str) -> tuple[str, bool]:
+    """Remove every ``s`` meaning *vs Stunty* and report whether one was found.
+
+    ``s`` is Stunty when it is part of an armour suffix (``av9s``, ``av9ks``)
+    or stands anywhere else that is not right after a D6 digit, e.g. after a
+    block token (``2d-s``) or on its own (``2d s av9``). An ``s`` directly after
+    a D6 digit keeps its shorthand meaning (``224s3`` = ``2+ 2+ 4++ 3+``).
+    """
+
+    found = False
+
+    def drop(match: re.Match[str]) -> str:
+        nonlocal found
+        found = True
+        return match.group(1) + match.group(2)
+
+    armour_suffix = re.compile(r"(a(?:v)?\d{1,2}[kim]*)[sS]([kimKIM]*)", re.IGNORECASE)
+    previous = None
+    while previous != text:
+        previous = text
+        text = armour_suffix.sub(drop, text)
+
+    def drop_loose(_match: re.Match[str]) -> str:
+        nonlocal found
+        found = True
+        return " "
+
+    text = re.sub(r"(?<![1-6])[sS]", drop_loose, text)
+    return text, found
+
+
+def apply_options(steps: list[Step], options: SequenceOptions) -> list[Step]:
+    """Apply sequence-wide skills to every matching step.
+
+    Block turns Both Down into a success on all blocks (``''`` -> ``+``,
+    ``-`` -> ``+-``). Brawler goes on every block. Mighty Blow and Stunty go on
+    every armour step.
+    """
+
+    result: list[Step] = []
+    for step in steps:
+        if isinstance(step, BlockDiceTarget):
+            outcome = step.outcome
+            if options.block:
+                outcome = {"": "+", "-": "+-"}.get(outcome, outcome)
+            step = BlockDiceTarget(
+                dice_count=step.dice_count,
+                negative=step.negative,
+                outcome=outcome,
+                local_rerolls=1 if options.brawler else step.local_rerolls,
+            )
+        elif isinstance(step, ArmorValueTarget):
+            step = with_injury(step, _injury_core(step.injury_suffix), options)
+        result.append(step)
+    return result
+
+
+def _injury_core(suffix: str) -> str:
+    """Return 'k', 'i' or '' from a canonical suffix (ignoring stunty and MB)."""
+
+    core = suffix.replace("m", "").replace("s", "")
+    return core
+
+
+def with_injury(step: ArmorValueTarget, injury: str, options: SequenceOptions) -> ArmorValueTarget:
+    """Return ``step`` asking for ``injury`` ('' break, 'k' KO, 'i' CAS)."""
+
+    has_m = options.mighty_blow or step.injury_suffix.endswith("m")
+    stunty = options.stunty or "s" in step.injury_suffix
+    suffix = injury
+    if injury and stunty:
+        suffix = {"k": "ks", "i": "si"}[injury]
+    if has_m:
+        suffix += "m"
+    return ArmorValueTarget(target=step.target, injury_suffix=_normalize_injury_suffix(suffix))
+
+
+def armour_outcomes(
+    calculator: "RollSequenceCalculator",
+    steps: list[Step],
+    options: SequenceOptions,
+    max_global_rerolls: int = 2,
+) -> dict[str, dict[int, float]] | None:
+    """Chance to break armour, KO and casualty for the last armour step.
+
+    Returns ``None`` when the sequence has no armour step.
+    """
+
+    armour_indexes = [i for i, step in enumerate(steps) if isinstance(step, ArmorValueTarget)]
+    if not armour_indexes:
+        return None
+    last = armour_indexes[-1]
+    outcomes: dict[str, dict[int, float]] = {}
+    for label, injury in (("Break", ""), ("KO", "k"), ("CAS", "i")):
+        variant = list(steps)
+        variant[last] = with_injury(steps[last], injury, options)
+        result = calculator.calculate(variant, max_global_rerolls=max_global_rerolls, pro=options.pro)
+        outcomes[label] = dict(result.global_reroll_probabilities)
+    return outcomes
 
 
 def _combine_spaced_armor_injury_tokens(raw_parts: list[str]) -> list[str]:
@@ -534,9 +734,9 @@ def _parse_threshold(token: str) -> RollTarget:
 def _parse_block_dice_token(token: str) -> BlockDiceTarget:
     """Parse a block dice token such as 2d+, -3d*, 1d, or 2d+++ into a BlockDiceTarget.
 
-    An optional ``++`` suffix at the very end signals one built-in reroll of the
-    whole pool (Brawler skill).  A ``++``-tagged step cannot also consume a
-    shared team reroll.
+    An optional ``++`` suffix at the very end marks Brawler: one die showing an
+    unwanted Both Down may be re-rolled. Failures without a Both Down can still
+    use a team re-roll or Pro.
     """
 
     token = token.strip()
@@ -628,7 +828,12 @@ def _parse_block_target_from(text: str, index: int) -> tuple[BlockDiceTarget, in
 
 
 class RollSequenceCalculator:
-    def calculate(self, sequence: list[Step], max_global_rerolls: int = 2) -> CalculationResult:
+    def calculate(
+        self,
+        sequence: list[Step],
+        max_global_rerolls: int = 2,
+        pro: bool = False,
+    ) -> CalculationResult:
         """Calculate base and shared-reroll odds for an ordered roll sequence.
 
         The method evaluates the chain multiple times: once for each available
@@ -655,19 +860,15 @@ class RollSequenceCalculator:
         for rerolls in range(max_global_rerolls + 1):
             # distribution[n] = probability that the chain has succeeded so far and
             # exactly n shared rerolls remain available for future rolls.
-            distribution = [0.0] * (rerolls + 1)
-            distribution[rerolls] = 1.0
-
-            for target in sequence:
-                distribution = self._advance_distribution(distribution, target)
-                cumulative_histories[rerolls].append(sum(distribution))
+            cumulative_histories[rerolls].extend(self._chain_history(sequence, rerolls, pro))
 
         for index, target in enumerate(sequence):
             # Store the per-step view separately from the dynamic-programming state so
             # the GUI can explain each roll in plain terms.
             if isinstance(target, BlockDiceTarget):
                 single_attempt_probability = target.base_probability
-                roll_probability = 1 - (1 - single_attempt_probability) ** (target.local_rerolls + 1)
+                ok, fail_classes = self._block_branches(target)
+                roll_probability = ok + sum(prob * actions.get("free", 0.0) for prob, actions in fail_classes)
                 threshold: int | None = None
             elif isinstance(target, ArmorValueTarget):
                 single_attempt_probability = armor_and_injury_probability(target)
@@ -705,6 +906,129 @@ class RollSequenceCalculator:
         )
 
     @staticmethod
+    def _block_branches(target: BlockDiceTarget) -> tuple[float, list[tuple[float, dict[str, float]]]]:
+        """Enumerate one block pool into success and failure classes.
+
+        Each die is good (``p``), Both Down that is not wanted (``q``), or another
+        bad face. A failure class lists the re-rolls that can rescue it:
+
+        - ``free`` (Brawler, ``++``): re-roll one Both Down die.
+        - ``pro``: re-roll one single die (needs the 2/3 Pro roll first).
+        - ``rr``: team re-roll of the whole pool.
+        """
+
+        from itertools import product
+
+        p = block_die_single_probability(target.outcome)
+        both_down_wanted = "+" in target.outcome
+        q = 0.0 if both_down_wanted else 1 / 6
+        other = 1 - p - q
+        single = target.base_probability
+        n = target.dice_count
+
+        classes: dict[tuple[bool, bool], float] = {}
+        ok = 0.0
+        for faces in product("gbo", repeat=n):
+            prob = 1.0
+            for face in faces:
+                prob *= {"g": p, "b": q, "o": other}[face]
+            if prob == 0:
+                continue
+            good = faces.count("g")
+            bad = n - good
+            success = bad == 0 if target.negative else good > 0
+            if success:
+                ok += prob
+                continue
+            # One re-rolled die can only fix a defender-picks pool with one bad die.
+            single_die_fix = True if not target.negative else bad == 1
+            brawler = bool(target.local_rerolls) and single_die_fix and "b" in faces
+            key = (brawler, single_die_fix)
+            classes[key] = classes.get(key, 0.0) + prob
+
+        branches = []
+        for (brawler, single_die_fix), prob in classes.items():
+            actions = {"rr": single}
+            if single_die_fix:
+                actions["pro"] = (2 / 3) * p
+            if brawler:
+                actions["free"] = p
+            branches.append((prob, actions))
+        return ok, branches
+
+    @classmethod
+    def _step_branches(cls, target: Step) -> tuple[float, list[tuple[float, dict[str, float]]]]:
+        """Return (P first attempt succeeds, failure classes with rescue options)."""
+
+        if isinstance(target, ArmorValueTarget):
+            return armor_and_injury_probability(target), []
+        if isinstance(target, BlockDiceTarget):
+            return cls._block_branches(target)
+        single = cls.roll_probability(target.threshold)
+        if target.weighted_reroll:
+            return single, [(1 - single, {"free": (2 / 3) * single})]
+        if target.local_rerolls:
+            return single, [(1 - single, {"free": single})]
+        return single, [(1 - single, {"rr": single, "pro": (2 / 3) * single})]
+
+    @classmethod
+    def _chain_history(cls, sequence: list[Step], rerolls: int, pro: bool) -> list[float]:
+        """Cumulative success after each step under the best re-roll policy.
+
+        State is (team re-rolls left, Pro still available). A die is re-rolled at
+        most once, so a failure uses at most one of: its own skill re-roll
+        (``++``/Brawler), Pro (once per sequence), or a team re-roll. A skill
+        re-roll is always used when it applies; otherwise the choice between Pro
+        and a team re-roll is made with a backward value pass so scarce re-rolls
+        go where they help most. The forward pass reports cumulative success.
+        """
+
+        n = len(sequence)
+        branches = [cls._step_branches(target) for target in sequence]
+        start = (rerolls, 1 if pro else 0)
+        states = [(r, p) for r in range(rerolls + 1) for p in (0, 1)]
+
+        value: list[dict[tuple[int, int], float]] = [dict() for _ in range(n + 1)]
+        for state in states:
+            value[n][state] = 1.0
+
+        def transitions(i: int, r: int, p: int) -> list[tuple[float, tuple[int, int]]]:
+            ok, fail_classes = branches[i]
+            result = [(ok, (r, p))]
+            for prob, actions in fail_classes:
+                if "free" in actions:
+                    # A skill re-roll (++ / Brawler) is always taken first; team
+                    # re-rolls and Pro are kept for later steps.
+                    result.append((prob * actions["free"], (r, p)))
+                    continue
+                options = []
+                if "rr" in actions and r > 0:
+                    options.append((actions["rr"], (r - 1, p)))
+                if "pro" in actions and p:
+                    options.append((actions["pro"], (r, 0)))
+                if options:
+                    success, nxt = max(options, key=lambda o: o[0] * value[i + 1][o[1]])
+                    result.append((prob * success, nxt))
+            return result
+
+        for i in range(n - 1, -1, -1):
+            for r, p in states:
+                value[i][(r, p)] = sum(
+                    prob * value[i + 1][nxt] for prob, nxt in transitions(i, r, p)
+                )
+
+        history: list[float] = []
+        distribution = {start: 1.0}
+        for i in range(n):
+            next_distribution: dict[tuple[int, int], float] = {}
+            for (r, p), mass in distribution.items():
+                for prob, nxt in transitions(i, r, p):
+                    next_distribution[nxt] = next_distribution.get(nxt, 0.0) + mass * prob
+            distribution = next_distribution
+            history.append(sum(distribution.values()))
+        return history
+
+    @staticmethod
     def roll_probability(threshold: int) -> float:
         """Probability that a single D6 attempt succeeds at the given threshold."""
 
@@ -730,64 +1054,11 @@ class RollSequenceCalculator:
     def roll_probability_with_weighted_reroll(threshold: int) -> float:
         """Probability for a die roll with weighted reroll (p suffix).
 
-        First attempt at the threshold, then if failed, reroll at 2/3 probability.
-        Formula: P(success on first) + P(fail first) * (2/3)
+        First attempt at the threshold; if failed, a 3+ Pro roll (2/3) allows a
+        re-roll at the same threshold. Formula: P + (1 - P) * (2/3) * P
         """
 
         first_attempt = RollSequenceCalculator.roll_probability(threshold)
-        # If first attempt fails, reroll at fixed 2/3 probability
-        return first_attempt + (1 - first_attempt) * (2 / 3)
-
-    @staticmethod
-    def _advance_distribution(distribution: list[float], target: Step) -> list[float]:
-        """Advance the shared-reroll state by one roll, block pool, or armor roll.
-
-        The current distribution represents successful paths only.
-
-        A step with ++ or p uses its own reroll and cannot also spend a shared RR.
-        A step without ++ or p may consume at most one shared RR after a failed first
-        attempt. Paths that still fail after that are omitted because the chain ends.
-        """
-
-        next_distribution = [0.0] * len(distribution)
-        if isinstance(target, ArmorValueTarget):
-            # Armor steps are resolved as a single 2D6 roll with no reroll usage.
-            single_attempt_probability = armor_and_injury_probability(target)
-            for rerolls_remaining, state_probability in enumerate(distribution):
-                if state_probability == 0:
-                    continue
-                next_distribution[rerolls_remaining] += state_probability * single_attempt_probability
-            return next_distribution
-
-        if isinstance(target, BlockDiceTarget):
-            single_attempt_probability = target.base_probability
-            local_roll_probability = 1 - (1 - single_attempt_probability) ** (target.local_rerolls + 1)
-        elif isinstance(target, RollTarget) and target.weighted_reroll:
-            # Weighted reroll uses 2/3 success on the reroll attempt
-            single_attempt_probability = RollSequenceCalculator.roll_probability(target.threshold)
-            local_roll_probability = RollSequenceCalculator.roll_probability_with_weighted_reroll(target.threshold)
-        else:
-            single_attempt_probability = RollSequenceCalculator.roll_probability(target.threshold)
-            local_roll_probability = RollSequenceCalculator.roll_probability_with_local_rerolls(
-                target.threshold,
-                target.local_rerolls,
-            )
-
-        for rerolls_remaining, state_probability in enumerate(distribution):
-            if state_probability == 0:
-                continue
-
-            # Both ++ and p reroll are treated the same: use local reroll probability
-            if target.local_rerolls == 1 or (isinstance(target, RollTarget) and target.weighted_reroll):
-                next_distribution[rerolls_remaining] += state_probability * local_roll_probability
-                continue
-
-            next_distribution[rerolls_remaining] += state_probability * single_attempt_probability
-            if rerolls_remaining > 0:
-                # Shared RR is only available after the first failed attempt and can
-                # only be used once on this die.
-                next_distribution[rerolls_remaining - 1] += (
-                    state_probability * (1 - single_attempt_probability) * single_attempt_probability
-                )
-
-        return next_distribution
+        # After a failure the Pro roll (3+, 2/3) allows a re-roll of the die,
+        # which must then succeed again at the normal target.
+        return first_attempt + (1 - first_attempt) * (2 / 3) * first_attempt

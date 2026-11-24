@@ -176,7 +176,7 @@ class ParseRollSequenceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_roll_sequence("av9x")
         with self.assertRaises(ValueError):
-            parse_roll_sequence("av9s")
+            parse_roll_sequence("av9kk")
 
     def test_parses_weighted_reroll_suffix(self) -> None:
         self.assertEqual(
@@ -259,25 +259,24 @@ class RollSequenceCalculatorTests(unittest.TestCase):
             RollSequenceCalculator().calculate([RollTarget(threshold=7, local_rerolls=0)])
 
     def test_weighted_reroll_probability(self) -> None:
-        # 3+p: first attempt 4/6, fail 2/6; reroll at 2/3
-        # total: 4/6 + 2/6 * 2/3 = 4/6 + 4/18 = 12/18 + 4/18 = 16/18
+        # 3+p: first attempt 4/6; on failure Pro 3+ (2/3) then re-roll at 4/6
         result = RollSequenceCalculator().calculate(parse_roll_sequence("3+p"))
-        expected = (4 / 6) + (2 / 6) * (2 / 3)
+        expected = (4 / 6) + (2 / 6) * (2 / 3) * (4 / 6)
         self.assertAlmostEqual(result.steps[0].roll_probability, expected)
         self.assertAlmostEqual(result.final_probability, expected)
 
     def test_weighted_reroll_does_not_consume_shared_rr(self) -> None:
         # 3+p should have identical probability across base/1RR/2RR
         result = RollSequenceCalculator().calculate(parse_roll_sequence("3+p"), max_global_rerolls=2)
-        expected = (4 / 6) + (2 / 6) * (2 / 3)
+        expected = (4 / 6) + (2 / 6) * (2 / 3) * (4 / 6)
         self.assertAlmostEqual(result.probability_with_global_rerolls(0), expected)
         self.assertAlmostEqual(result.probability_with_global_rerolls(1), expected)
         self.assertAlmostEqual(result.probability_with_global_rerolls(2), expected)
 
     def test_mixed_chain_with_weighted_and_normal_rerolls(self) -> None:
-        # 2+ (5/6) then 3+p (16/18) then 4+ (3/6)
+        # 2+ (5/6) then 3+p then 4+ (3/6)
         result = RollSequenceCalculator().calculate(parse_roll_sequence("2+ 3+p 4+"))
-        expected = (5 / 6) * ((4 / 6) + (2 / 6) * (2 / 3)) * (3 / 6)
+        expected = (5 / 6) * ((4 / 6) + (2 / 6) * (2 / 3) * (4 / 6)) * (3 / 6)
         self.assertAlmostEqual(result.final_probability, expected)
 
     def test_weighted_reroll_display_token(self) -> None:
@@ -448,16 +447,41 @@ class BlockDiceCalculatorTests(unittest.TestCase):
         self.assertAlmostEqual(result.probability_with_global_rerolls(0), base)
         self.assertAlmostEqual(result.probability_with_global_rerolls(1), with_rr)
 
-    def test_brawler_reroll_on_block_dice(self) -> None:
-        # 2d++ (Brawler): p_pool = 1-(4/6)^2; local reroll doubles attempt
-        # effective p = 1 - (1 - p_pool)^2; no global RR consumed
+    def test_brawler_rerolls_one_both_down_die(self) -> None:
+        # 2d++ (Brawler): faces per die: good 2/6, Both Down 1/6, other 3/6.
+        # Fail with at least one Both Down -> re-roll that die (2/6).
+        p, q, o = 2 / 6, 1 / 6, 3 / 6
+        fail = (q + o) ** 2
+        fixable = fail - o ** 2
+        expected = (1 - fail) + fixable * p
         result = RollSequenceCalculator().calculate(parse_roll_sequence("2d++"), max_global_rerolls=2)
-        p_pool = 1 - (4 / 6) ** 2
-        expected = 1 - (1 - p_pool) ** 2
         self.assertAlmostEqual(result.probability_with_global_rerolls(0), expected)
-        # Brawler uses its own reroll — shared RRs unchanged
-        self.assertAlmostEqual(result.probability_with_global_rerolls(1), expected)
-        self.assertAlmostEqual(result.probability_with_global_rerolls(2), expected)
+        # Brawler is always preferred; only failures without Both Down use the RR.
+        single = 1 - (4 / 6) ** 2
+        self.assertAlmostEqual(result.probability_with_global_rerolls(1), expected + o ** 2 * single)
+        two = RollSequenceCalculator().calculate(parse_roll_sequence("2d++ 4+"), max_global_rerolls=1)
+        no_brawler = RollSequenceCalculator().calculate(parse_roll_sequence("2d 4+"), max_global_rerolls=1)
+        self.assertGreater(two.final_probability, no_brawler.final_probability)
+
+    def test_brawler_rerolled_block_cannot_use_pro_or_team_rr(self) -> None:
+        # A failed Brawler re-roll ends the chain: no Pro, no team RR on top.
+        p, q, o = 2 / 6, 1 / 6, 3 / 6
+        fail = (q + o) ** 2
+        fixable = fail - o ** 2
+        single = 1 - (4 / 6) ** 2
+        result = RollSequenceCalculator().calculate(parse_roll_sequence("2d++"), pro=True)
+        # Pro / RR only ever reach the failures without a Both Down (o**2).
+        self.assertAlmostEqual(result.final_probability, (1 - fail) + fixable * p + o ** 2 * (2 / 3) * p)
+        self.assertAlmostEqual(
+            result.probability_with_global_rerolls(2), (1 - fail) + fixable * p + o ** 2 * single
+        )
+
+    def test_brawler_no_effect_when_both_down_is_wanted(self) -> None:
+        calc = RollSequenceCalculator()
+        self.assertEqual(
+            calc.calculate(parse_roll_sequence("2d+++")).global_reroll_probabilities,
+            calc.calculate(parse_roll_sequence("2d+")).global_reroll_probabilities,
+        )
 
     def test_mixed_chain_d6_and_block(self) -> None:
         # 3+ (4/6) then 2d+ (1-(3/6)^2 = 3/4)
@@ -494,6 +518,118 @@ class BlockDiceCalculatorTests(unittest.TestCase):
     def test_rejects_local_reroll_on_armor_target(self) -> None:
         with self.assertRaises(ValueError):
             RollSequenceCalculator().calculate([ArmorValueTarget(target=9, local_rerolls=1)])
+
+
+class ProToggleTests(unittest.TestCase):
+    """Pro gives one 2/3 reroll for the whole sequence."""
+
+    def calc(self, text: str):
+        return RollSequenceCalculator().calculate(parse_roll_sequence(text), pro=True)
+
+    def test_single_die(self) -> None:
+        self.assertAlmostEqual(self.calc("4+").final_probability, 0.5 + 0.5 * (2 / 3) * 0.5)
+
+    def test_pro_used_only_once(self) -> None:
+        # both pass, or exactly one fails and Pro saves it
+        expected = 0.25 + 2 * 0.25 * (2 / 3) * 0.5
+        self.assertAlmostEqual(self.calc("4+ 4+").final_probability, expected)
+
+    def test_no_effect_on_own_reroll_or_armor(self) -> None:
+        self.assertAlmostEqual(
+            self.calc("3++ av9").final_probability,
+            RollSequenceCalculator().calculate(parse_roll_sequence("3++ av9")).final_probability,
+        )
+
+    def test_team_reroll_still_helps(self) -> None:
+        result = self.calc("4+ 4+")
+        self.assertGreater(result.probability_with_global_rerolls(1), result.final_probability)
+        self.assertAlmostEqual(result.probability_with_global_rerolls(2), 0.5625)
+
+    def test_any_p_enables_pro_for_whole_sequence(self) -> None:
+        from diced.core import parse_roll_sequence_with_pro
+        expected = self.calc("4+ 4+").final_probability
+        for text in ("4+ 4+ p", "p 4+ 4+", "4+, p, 4+", "4+p 4+", "4p 4+", "4+ 4P"):
+            steps, pro = parse_roll_sequence_with_pro(text)
+            self.assertTrue(pro, text)
+            got = RollSequenceCalculator().calculate(steps, pro=pro).final_probability
+            self.assertAlmostEqual(got, expected, msg=text)
+        self.assertFalse(parse_roll_sequence_with_pro("4+ 4+")[1])
+
+    def test_pro_rerolls_single_block_die(self) -> None:
+        p = 1 / 3
+        # 2d: both dice failed, one re-rolled die must hit
+        expected = (1 - (1 - p) ** 2) + (1 - p) ** 2 * (2 / 3) * p
+        self.assertAlmostEqual(self.calc("2d").final_probability, expected)
+        # -2d: only a pool with exactly one bad die can be fixed
+        expected = p ** 2 + 2 * p * (1 - p) * (2 / 3) * p
+        self.assertAlmostEqual(self.calc("-2d").final_probability, expected)
+
+    def test_pro_off_matches_default(self) -> None:
+        seq = parse_roll_sequence("2+ 3+ 2d av9")
+        calc = RollSequenceCalculator()
+        self.assertEqual(
+            calc.calculate(seq).global_reroll_probabilities,
+            calc.calculate(seq, pro=False).global_reroll_probabilities,
+        )
+
+
+class MightyBlowTests(unittest.TestCase):
+    """Mighty Blow modifies either armour or injury, chosen after the armour roll."""
+
+    def test_mb_can_push_armour_through(self) -> None:
+        def at_least(t: int) -> float:
+            return sum(1 for a in range(1, 7) for b in range(1, 7) if a + b >= t) / 36
+
+        expected = at_least(9) * at_least(7) + (at_least(8) - at_least(9)) * at_least(8)
+        self.assertAlmostEqual(
+            armor_and_injury_probability(ArmorValueTarget(target=9, injury_suffix="km")), expected
+        )
+
+
+class SequenceOptionTests(unittest.TestCase):
+    """Sequence-wide skills: b (Brawler), p (Pro), and the toggles."""
+
+    def test_b_anywhere_gives_every_block_brawler(self) -> None:
+        from diced.core import apply_options, parse_sequence
+
+        for text in ("2d- b 3d* av9", "b2d-3d*av9", "2d-b 3d* av9", "2d- 3d* av9 B"):
+            steps, options = parse_sequence(text)
+            self.assertTrue(options.brawler, text)
+            blocks = [s for s in apply_options(steps, options) if isinstance(s, BlockDiceTarget)]
+            self.assertEqual([b.local_rerolls for b in blocks], [1, 1], text)
+            self.assertEqual([b.outcome for b in blocks], ["-", "*"], text)
+
+    def test_s_means_stunty_except_after_a_d6_digit(self) -> None:
+        from diced.core import apply_options, parse_sequence
+
+        for text in ("2d- s av9k", "2d-s av9k", "2d-sav9k", "2d s av9k", "av9s k", "av9ks"):
+            steps, options = parse_sequence(text)
+            self.assertTrue(options.stunty, text)
+            armour = apply_options(steps, options)[-1]
+            self.assertEqual(armour.injury_suffix, "ks", text)
+        steps, options = parse_sequence("224s3")
+        self.assertFalse(options.stunty)
+        self.assertEqual(steps[2], RollTarget(threshold=4, local_rerolls=1))
+
+    def test_block_toggle_upgrades_outcomes(self) -> None:
+        from diced.core import SequenceOptions, apply_options
+
+        steps = apply_options(parse_roll_sequence("2d 2d- 2d* 2d/"), SequenceOptions(block=True))
+        self.assertEqual([s.outcome for s in steps], ["+", "+-", "*", "/"])
+
+    def test_armour_outcomes(self) -> None:
+        from diced.core import SequenceOptions, apply_options, armour_outcomes
+
+        options = SequenceOptions(mighty_blow=True, stunty=True)
+        steps = apply_options(parse_roll_sequence("1d av9"), options)
+        out = armour_outcomes(RollSequenceCalculator(), steps, options)
+        block = 2 / 6
+        self.assertAlmostEqual(out["Break"][0], block * 15 / 36)  # MB: 8+
+        ko = armor_and_injury_probability(ArmorValueTarget(target=9, injury_suffix="ksm"))
+        cas = armor_and_injury_probability(ArmorValueTarget(target=9, injury_suffix="sim"))
+        self.assertAlmostEqual(out["KO"][0], block * ko)
+        self.assertAlmostEqual(out["CAS"][0], block * cas)
+        self.assertIsNone(armour_outcomes(RollSequenceCalculator(), parse_roll_sequence("4+"), options))
 
 
 if __name__ == "__main__":
