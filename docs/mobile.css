@@ -51,3 +51,27 @@ html.compact-pending .card { visibility: hidden; }
 .key-row { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .key { overflow: hidden; }
 .action-row, body.compact .action-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 3fr); }
+
+/* Small Go button inside the entry field, left of the ? button. */
+.entry-wrap input { padding-right: 6.2rem; }
+.entry-go {
+  position: absolute;
+  right: 46px;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 2px;
+  background: var(--button);
+  color: #fff;
+  font-family: var(--slab);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.entry-go:hover { background: var(--button-hover); }
+body.compact .entry-wrap input { padding-right: 4.6rem; }
+body.compact .entry-go { right: 32px; height: 24px; padding: 0 8px; font-size: 12px; }

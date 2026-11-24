@@ -174,7 +174,10 @@
   syncThemeIcon();
 
   const compactToggle = $("compact-toggle");
-  const compactOn = load("dicedCompact") === "1";
+  // Compact is the default on phones until the user chooses otherwise.
+  const savedCompact = load("dicedCompact");
+  const isPhone = /iPhone|iPod|Android.*Mobile|Mobi/i.test(navigator.userAgent) || (matchMedia("(pointer: coarse)").matches && Math.min(screen.width, screen.height) < 600);
+  const compactOn = savedCompact === null ? isPhone : savedCompact === "1";
   compactToggle.checked = compactOn;
   document.body.classList.toggle("compact", compactOn);
   document.documentElement.classList.remove("compact-pending");

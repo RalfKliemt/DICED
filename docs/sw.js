@@ -1,5 +1,5 @@
 /* Offline cache. Bump VERSION whenever any file in docs/ changes so phones update. */
-const VERSION = "diced-v2";
+const VERSION = "diced-v5";
 const FILES = [
   "./",
   "index.html",

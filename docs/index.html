@@ -9,7 +9,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="DICED">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -17,7 +17,9 @@
       try {
         const t = localStorage.getItem("dicedTheme");
         if (t === "dark" || t === "light") document.documentElement.dataset.theme = t;
-        if (localStorage.getItem("dicedCompact") === "1") document.documentElement.classList.add("compact-pending");
+        const c = localStorage.getItem("dicedCompact");
+        const phone = /iPhone|iPod|Android.*Mobile|Mobi/i.test(navigator.userAgent) || (matchMedia("(pointer: coarse)").matches && Math.min(screen.width, screen.height) < 600);
+        if (c === "1" || (c === null && phone)) document.documentElement.classList.add("compact-pending");
       } catch (_e) {}
     </script>
     <link rel="stylesheet" href="style.css">
@@ -58,6 +60,7 @@
                 spellcheck="false"
                 enterkeyhint="go"
               >
+              <button type="submit" class="entry-go" aria-label="Calculate">Go</button>
               <button type="button" id="syntax-help-open" class="icon-button" aria-haspopup="dialog" aria-controls="syntax-help-panel" title="Syntax help">?</button>
             </div>
 
