@@ -7,12 +7,45 @@
 
   // ---------------------------------------------------------------- dice
 
-  // Block die faces: POW, POW/SKULL(stumble), BOTH DOWN, PUSH, PUSH, SKULL.
+  // Block die faces: POW, POW* (stumble), PUSH, PUSH, BOTH DOWN, SKULL (attacker down).
   const BLOCK_FACES = { "": 2, "+": 3, "*": 1, "-": 4, "+-": 5, "/": 2 };
+  const DIE = ["pow", "stumble", "push", "push", "both", "skull"];
 
   function rollProbability(threshold) {
     if (threshold < 1 || threshold > 6) throw new Error("Roll target must be between 1 and 6 on a D6.");
-    return (7 - threshold) / 6;
+    // A natural 1 always fails, so 1+ is the same as 2+.
+    return (7 - Math.max(threshold, 2)) / 6;
+  }
+
+  function wantedFaces(outcome) {
+    if (!(outcome in BLOCK_FACES)) throw new Error(`Unknown block die outcome: '${outcome}'.`);
+    const base = { "": ["pow", "stumble"], "*": ["pow"], "-": ["pow", "stumble", "push"], "/": ["push"] }[
+      outcome.replace(/\+/g, "")
+    ];
+    return new Set(outcome.includes("+") ? [...base, "both"] : base);
+  }
+
+  // Attacker picks any die; the defender (-2d/-3d) picks the result worst for the
+  // attacker: Skull, Both Down (unless attacker has Block), Push, Stumble, Both Down with Block, Pow.
+  function blockSucceeds(t, faces) {
+    const wanted = wantedFaces(t.outcome);
+    const eff = faces.map((f) => (f === "stumble" && t.stunty ? "push" : f));
+    if (!t.negative) return eff.some((f) => wanted.has(f));
+    const hasBlock = t.block || t.outcome.includes("+");
+    const rank = { skull: 0, both: hasBlock ? 4 : 1, push: 2, stumble: 3, pow: 5 };
+    let chosen = eff[0];
+    for (const f of eff) if (rank[f] < rank[chosen]) chosen = f;
+    return wanted.has(chosen);
+  }
+
+  function* blockPools(n) {
+    const total = 6 ** n;
+    for (let code = 0; code < total; code++) {
+      const faces = [];
+      let c = code;
+      for (let k = 0; k < n; k++) { faces.push(DIE[c % 6]); c = Math.floor(c / 6); }
+      yield faces;
+    }
   }
 
   function blockDieSingle(outcome) {
@@ -21,8 +54,9 @@
   }
 
   function blockBase(t) {
-    const p = blockDieSingle(t.outcome);
-    return t.negative ? p ** t.diceCount : 1 - (1 - p) ** t.diceCount;
+    let hits = 0;
+    for (const faces of blockPools(t.diceCount)) if (blockSucceeds(t, faces)) hits++;
+    return hits / 6 ** t.diceCount;
   }
 
   function twoD6AtLeast(target) {
@@ -82,8 +116,8 @@
   function d6(threshold, localRerolls = 0, weighted = false) {
     return { kind: "d6", threshold, localRerolls, weighted };
   }
-  function block(diceCount, negative, outcome, localRerolls = 0) {
-    return { kind: "block", diceCount, negative, outcome, localRerolls };
+  function block(diceCount, negative, outcome, localRerolls = 0, hasBlock = false, stunty = false) {
+    return { kind: "block", diceCount, negative, outcome, localRerolls, block: hasBlock, stunty };
   }
   function armor(target, injurySuffix = "") {
     return { kind: "armor", target, injurySuffix, localRerolls: 0 };
@@ -320,7 +354,10 @@
       if (s.kind === "block") {
         let outcome = s.outcome;
         if (o.block) outcome = { "": "+", "-": "+-" }[outcome] ?? outcome;
-        return block(s.diceCount, s.negative, outcome, o.brawler ? 1 : s.localRerolls);
+        return block(
+          s.diceCount, s.negative, outcome, o.brawler ? 1 : s.localRerolls,
+          Boolean(o.block) || outcome.includes("+"), Boolean(o.stunty),
+        );
       }
       if (s.kind === "armor") return withInjury(s, injuryCore(s.injurySuffix), o);
       return s;
@@ -329,41 +366,45 @@
 
   // --------------------------------------------------------- calculation
 
-  // Enumerate a block pool into success and failure classes with rescues:
-  // free = Brawler (one Both Down die), pro = one die after 2/3, rr = whole pool.
+  // Enumerate a block pool face by face into success and failure classes.
+  // Rescues (only one per roll): free = Brawler re-rolls one unwanted Both Down
+  // (always taken when it can help), pro = best single die after 2/3, rr = whole pool.
   function blockBranches(t) {
-    const p = blockDieSingle(t.outcome);
-    const q = t.outcome.includes("+") ? 0 : 1 / 6;
-    const other = 1 - p - q;
-    const single = blockBase(t);
     const n = t.diceCount;
+    const die = 1 / 6;
+    const single = blockBase(t);
+    const wanted = wantedFaces(t.outcome);
+    const rescue = (faces, index) => {
+      let chance = 0;
+      for (const face of DIE) {
+        const next = faces.slice();
+        next[index] = face;
+        if (blockSucceeds(t, next)) chance += die;
+      }
+      return chance;
+    };
     const classes = new Map();
     let ok = 0;
-    const faces = ["g", "b", "o"];
-    const probOf = { g: p, b: q, o: other };
-    const total = 3 ** n;
-    for (let code = 0; code < total; code++) {
-      const combo = [];
-      let c = code;
-      for (let k = 0; k < n; k++) { combo.push(faces[c % 3]); c = Math.floor(c / 3); }
-      let prob = 1;
-      for (const f of combo) prob *= probOf[f];
-      if (prob === 0) continue;
-      const good = combo.filter((f) => f === "g").length;
-      const bad = n - good;
-      const success = t.negative ? bad === 0 : good > 0;
-      if (success) { ok += prob; continue; }
-      const singleDieFix = t.negative ? bad === 1 : true;
-      const brawler = Boolean(t.localRerolls) && singleDieFix && combo.includes("b");
-      const key = `${brawler}|${singleDieFix}`;
-      classes.set(key, (classes.get(key) || 0) + prob);
+    for (const faces of blockPools(n)) {
+      const prob = die ** n;
+      if (blockSucceeds(t, faces)) { ok += prob; continue; }
+      let free = 0;
+      if (t.localRerolls && !wanted.has("both") && faces.includes("both")) free = rescue(faces, faces.indexOf("both"));
+      let pro = 0;
+      for (let i = 0; i < n; i++) pro = Math.max(pro, rescue(faces, i));
+      const key = `${free}|${pro}`;
+      const cur = classes.get(key);
+      if (cur) cur[0] += prob;
+      else classes.set(key, [prob, free, pro]);
     }
     const branches = [];
-    for (const [key, prob] of classes) {
-      const [brawler, singleDieFix] = key.split("|").map((x) => x === "true");
-      const actions = { rr: single };
-      if (singleDieFix) actions.pro = (2 / 3) * p;
-      if (brawler) actions.free = p;
+    for (const [prob, free, pro] of classes.values()) {
+      const actions = {};
+      if (free > 0) actions.free = free;
+      else {
+        if (single > 0) actions.rr = single;
+        if (pro > 0) actions.pro = (2 / 3) * pro;
+      }
       branches.push([prob, actions]);
     }
     return [ok, branches];

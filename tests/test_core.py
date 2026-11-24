@@ -623,13 +623,88 @@ class SequenceOptionTests(unittest.TestCase):
         options = SequenceOptions(mighty_blow=True, stunty=True)
         steps = apply_options(parse_roll_sequence("1d av9"), options)
         out = armour_outcomes(RollSequenceCalculator(), steps, options)
-        block = 2 / 6
+        block = 1 / 6  # vs Stunty the stumble is only a push: Pow alone
         self.assertAlmostEqual(out["Break"][0], block * 15 / 36)  # MB: 8+
         ko = armor_and_injury_probability(ArmorValueTarget(target=9, injury_suffix="ksm"))
         cas = armor_and_injury_probability(ArmorValueTarget(target=9, injury_suffix="sim"))
         self.assertAlmostEqual(out["KO"][0], block * ko)
         self.assertAlmostEqual(out["CAS"][0], block * cas)
         self.assertIsNone(armour_outcomes(RollSequenceCalculator(), parse_roll_sequence("4+"), options))
+
+
+class RulesCrossCheckTests(unittest.TestCase):
+    """Independent brute-force checks of the dice rules."""
+
+    FACES = ("pow", "stumble", "push", "push", "both", "skull")
+
+    def _pick(self, faces, negative, block, stunty):
+        """The result actually applied: attacker or defender picks by game value."""
+        eff = ["push" if f == "stumble" and stunty else f for f in faces]
+        # value for the attacker, low = bad
+        value = {"skull": 0, "both": 4 if block else 1, "push": 2, "stumble": 3, "pow": 5}
+        return (min if negative else max)(eff, key=value.get), eff
+
+    def _wanted(self, outcome, chosen, eff, negative):
+        sets = {
+            "": {"pow", "stumble"}, "+": {"pow", "stumble", "both"}, "*": {"pow"},
+            "-": {"pow", "stumble", "push"}, "+-": {"pow", "stumble", "push", "both"}, "/": {"push"},
+        }[outcome]
+        if negative:
+            return chosen in sets
+        return any(f in sets for f in eff)  # the attacker picks what they need
+
+    def test_block_pools_by_brute_force(self) -> None:
+        from itertools import product
+        from diced.core import BlockDiceTarget
+
+        for n, negative, outcome, block, stunty in product(
+            (1, 2, 3), (False, True), ("", "+", "*", "-", "+-", "/"), (False, True), (False, True)
+        ):
+            if n == 1 and negative:
+                continue
+            block = block or "+" in outcome
+            hits = 0
+            for faces in product(self.FACES, repeat=n):
+                chosen, eff = self._pick(faces, negative, block, stunty)
+                hits += self._wanted(outcome, chosen, eff, negative)
+            target = BlockDiceTarget(n, negative, outcome, block=block, stunty=stunty)
+            with self.subTest(n=n, negative=negative, outcome=outcome, block=block, stunty=stunty):
+                self.assertAlmostEqual(target.base_probability, hits / 6 ** n)
+
+    def test_stunty_block_faces(self) -> None:
+        from diced.core import BlockDiceTarget
+
+        self.assertAlmostEqual(BlockDiceTarget(1, False, "", stunty=True).base_probability, 1 / 6)
+        self.assertAlmostEqual(BlockDiceTarget(1, False, "+", block=True, stunty=True).base_probability, 2 / 6)
+        self.assertAlmostEqual(BlockDiceTarget(1, False, "-", stunty=True).base_probability, 4 / 6)
+        self.assertAlmostEqual(BlockDiceTarget(1, False, "/", stunty=True).base_probability, 3 / 6)
+        self.assertAlmostEqual(BlockDiceTarget(1, False, "*", stunty=True).base_probability, 1 / 6)
+
+    def test_defender_picks_push_only(self) -> None:
+        from diced.core import BlockDiceTarget
+
+        # Defender takes a Push over a Pow: success = no Skull, no Both Down, at least one Push.
+        self.assertAlmostEqual(BlockDiceTarget(2, True, "/").base_probability, (16 - 4) / 36)
+
+    def test_one_plus_is_two_plus(self) -> None:
+        self.assertAlmostEqual(RollSequenceCalculator.roll_probability(1), 5 / 6)
+
+    def test_brawler_then_nothing_else(self) -> None:
+        from diced.core import BlockDiceTarget
+
+        # 1d Brawler: Pow/stumble 2/6; Both Down (1/6) gets the Brawler re-roll (2/6) and
+        # nothing else even with team re-rolls; Push/Skull (3/6) may use a team re-roll.
+        t = BlockDiceTarget(1, False, "", local_rerolls=1)
+        result = RollSequenceCalculator().calculate([t], max_global_rerolls=1)
+        self.assertAlmostEqual(result.global_reroll_probabilities[0], 2 / 6 + 1 / 6 * 2 / 6)
+        self.assertAlmostEqual(
+            result.global_reroll_probabilities[1], 2 / 6 + 1 / 6 * 2 / 6 + 3 / 6 * 2 / 6
+        )
+
+    def test_pro_and_team_reroll_not_on_same_roll(self) -> None:
+        # One 4+ with Pro and a team re-roll: only one of them on the failed die.
+        result = RollSequenceCalculator().calculate(parse_roll_sequence("4+"), max_global_rerolls=1, pro=True)
+        self.assertAlmostEqual(result.global_reroll_probabilities[1], 0.5 + 0.5 * 0.5)
 
 
 if __name__ == "__main__":

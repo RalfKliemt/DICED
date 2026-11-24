@@ -52,14 +52,13 @@ class RollTarget:
 # Block dice
 # ---------------------------------------------------------------------------
 
-# Standard Blood Bowl block die has 6 faces:
-#   POW, POW/SKULL, BOTH DOWN, PUSH, PUSH, SKULL
-# (PUSH appears on two faces, all others appear on one.)
+# A block die has 6 faces: POW, POW* (stumble), PUSH, PUSH, BOTH DOWN, SKULL
+# (attacker down). These counts are for one die without vs-Stunty.
 _BLOCK_OUTCOME_FACES: dict[str, int] = {
-    "": 2,    # POW + POW/SKULL  ("5+" equivalent)
-    "+": 3,   # POW + POW/SKULL + BOTH DOWN  ("4+")
+    "": 2,    # POW + POW*  ("5+" equivalent)
+    "+": 3,   # POW + POW* + BOTH DOWN  ("4+")
     "*": 1,   # POW only  ("6+")
-    "-": 4,   # No turnover: POW + POW/SKULL + PUSH×2  ("3+")
+    "-": 4,   # No turnover: POW + POW* + PUSH×2  ("3+")
     "+-": 5,  # No skull: all except SKULL  ("2+")
     "/": 2,   # Push only: PUSH×2  ("5+" by face count)
 }
@@ -75,6 +74,26 @@ def block_die_single_probability(outcome: str) -> float:
     return _BLOCK_OUTCOME_FACES[outcome] / 6
 
 
+POW, STUMBLE, PUSH, BOTH, SKULL = "pow", "stumble", "push", "both", "skull"
+BLOCK_DIE_FACES = (POW, STUMBLE, PUSH, PUSH, BOTH, SKULL)
+
+
+def _wanted_block_faces(outcome: str) -> frozenset[str]:
+    """Faces the attacker needs for a block outcome code (after vs-Stunty)."""
+
+    if outcome not in _BLOCK_OUTCOME_FACES:
+        raise ValueError(f"Unknown block die outcome: {outcome!r}.")
+    wanted = {
+        "": {POW, STUMBLE},
+        "*": {POW},
+        "-": {POW, STUMBLE, PUSH},
+        "/": {PUSH},
+    }[outcome.replace("+", "")]
+    if "+" in outcome:
+        wanted = wanted | {BOTH}
+    return frozenset(wanted)
+
+
 @dataclass(frozen=True)
 class BlockDiceTarget:
     """A Blood Bowl block dice pool roll.
@@ -84,12 +103,36 @@ class BlockDiceTarget:
     the desired face.  False means attacker picks: at least one die must match.
     `outcome` is one of '', '+', '*', '-', '+-', '/'.
     `local_rerolls` is 0 or 1; 1 means Brawler (re-roll one unwanted Both Down die).
+    `block` means the attacker has Block (set by the Block toggle; ``+`` implies it).
+    `stunty` means the defender is Stunty: POW* (stumble) counts as a push.
     """
 
     dice_count: int
     negative: bool
     outcome: str
     local_rerolls: int = 0
+    block: bool = False
+    stunty: bool = False
+
+    def face(self, face: str) -> str:
+        """The face as it plays out: vs Stunty a stumble is only a push."""
+        return PUSH if face == STUMBLE and self.stunty else face
+
+    def succeeds(self, faces: tuple[str, ...]) -> bool:
+        """Whether a rolled pool gives the wanted result.
+
+        The attacker picks any die. The defender (``-2d``/``-3d``) picks the
+        result worst for the attacker: Skull, then Both Down (unless the
+        attacker has Block), Push, Stumble, Both Down with Block, Pow.
+        """
+
+        wanted = _wanted_block_faces(self.outcome)
+        effective = [self.face(f) for f in faces]
+        if not self.negative:
+            return any(f in wanted for f in effective)
+        has_block = self.block or "+" in self.outcome
+        rank = {SKULL: 0, BOTH: 4 if has_block else 1, PUSH: 2, STUMBLE: 3, POW: 5}
+        return min(effective, key=rank.__getitem__) in wanted
 
     @property
     def token(self) -> str:
@@ -106,10 +149,10 @@ class BlockDiceTarget:
     @property
     def base_probability(self) -> float:
         """Pool success probability on a single attempt."""
-        p = block_die_single_probability(self.outcome)
-        if self.negative:
-            return p ** self.dice_count
-        return 1 - (1 - p) ** self.dice_count
+        from itertools import product
+
+        hits = sum(self.succeeds(faces) for faces in product(BLOCK_DIE_FACES, repeat=self.dice_count))
+        return hits / 6 ** self.dice_count
 
 
 @dataclass(frozen=True)
@@ -432,6 +475,8 @@ def apply_options(steps: list[Step], options: SequenceOptions) -> list[Step]:
                 negative=step.negative,
                 outcome=outcome,
                 local_rerolls=1 if options.brawler else step.local_rerolls,
+                block=options.block or "+" in outcome,
+                stunty=options.stunty,
             )
         elif isinstance(step, ArmorValueTarget):
             step = with_injury(step, _injury_core(step.injury_suffix), options)
@@ -907,52 +952,55 @@ class RollSequenceCalculator:
 
     @staticmethod
     def _block_branches(target: BlockDiceTarget) -> tuple[float, list[tuple[float, dict[str, float]]]]:
-        """Enumerate one block pool into success and failure classes.
+        """Enumerate one block pool face by face into success and failure classes.
 
-        Each die is good (``p``), Both Down that is not wanted (``q``), or another
-        bad face. A failure class lists the re-rolls that can rescue it:
+        A failure class lists the re-rolls that can rescue it (only one per roll):
 
-        - ``free`` (Brawler, ``++``): re-roll one Both Down die.
-        - ``pro``: re-roll one single die (needs the 2/3 Pro roll first).
+        - ``free`` (Brawler): re-roll one unwanted Both Down die. Always taken
+          when it can help; the block then gets no other re-roll.
+        - ``pro``: re-roll the best single die after passing the 3+ Pro roll.
         - ``rr``: team re-roll of the whole pool.
         """
 
         from itertools import product
 
-        p = block_die_single_probability(target.outcome)
-        both_down_wanted = "+" in target.outcome
-        q = 0.0 if both_down_wanted else 1 / 6
-        other = 1 - p - q
-        single = target.base_probability
         n = target.dice_count
+        die = 1 / 6
+        single = target.base_probability
+        wanted = _wanted_block_faces(target.outcome)
 
-        classes: dict[tuple[bool, bool], float] = {}
+        def rescue(faces: tuple[str, ...], index: int) -> float:
+            """Chance of success after re-rolling die ``index`` once."""
+            return sum(
+                die
+                for face in BLOCK_DIE_FACES
+                if target.succeeds(faces[:index] + (face,) + faces[index + 1 :])
+            )
+
+        classes: dict[tuple[float, float], float] = {}
         ok = 0.0
-        for faces in product("gbo", repeat=n):
-            prob = 1.0
-            for face in faces:
-                prob *= {"g": p, "b": q, "o": other}[face]
-            if prob == 0:
-                continue
-            good = faces.count("g")
-            bad = n - good
-            success = bad == 0 if target.negative else good > 0
-            if success:
+        for faces in product(BLOCK_DIE_FACES, repeat=n):
+            prob = die ** n
+            if target.succeeds(faces):
                 ok += prob
                 continue
-            # One re-rolled die can only fix a defender-picks pool with one bad die.
-            single_die_fix = True if not target.negative else bad == 1
-            brawler = bool(target.local_rerolls) and single_die_fix and "b" in faces
-            key = (brawler, single_die_fix)
+            free = 0.0
+            if target.local_rerolls and BOTH not in wanted and BOTH in faces:
+                free = rescue(faces, faces.index(BOTH))
+            pro = max(rescue(faces, i) for i in range(n))
+            key = (free, pro)
             classes[key] = classes.get(key, 0.0) + prob
 
         branches = []
-        for (brawler, single_die_fix), prob in classes.items():
-            actions = {"rr": single}
-            if single_die_fix:
-                actions["pro"] = (2 / 3) * p
-            if brawler:
-                actions["free"] = p
+        for (free, pro), prob in classes.items():
+            actions: dict[str, float] = {}
+            if free > 0:
+                actions["free"] = free
+            else:
+                if single > 0:
+                    actions["rr"] = single
+                if pro > 0:
+                    actions["pro"] = (2 / 3) * pro
             branches.append((prob, actions))
         return ok, branches
 
@@ -1034,7 +1082,8 @@ class RollSequenceCalculator:
 
         if threshold < 1 or threshold > 6:
             raise ValueError("Roll target must be between 1 and 6 on a D6.")
-        successful_faces = 7 - threshold
+        # A natural 1 always fails, so 1+ is the same as 2+.
+        successful_faces = 7 - max(threshold, 2)
         return successful_faces / 6
 
     @classmethod
