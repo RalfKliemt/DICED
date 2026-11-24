@@ -1,0 +1,50 @@
+/* Phone / installed-app tweaks layered on top of the shared style.css. */
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  overscroll-behavior: none;
+}
+
+/* Header sits under the notch / status bar when installed full-screen. */
+.card-header {
+  padding-top: max(12px, env(safe-area-inset-top, 0px));
+}
+body.compact .card-header { padding-top: max(4px, env(safe-area-inset-top, 0px)); }
+
+/* Thumb-friendly keys, no double-tap zoom, no grey tap flash. */
+.key, .go-button, .icon-button, .theme-toggle, .compact-switch {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* 16px stops iOS from zooming into the input on focus. */
+.entry-wrap input { font-size: max(16px, 1em); }
+
+@media (max-width: 480px) {
+  .key { min-height: 46px; }
+  .keypad { padding: 8px; }
+  .card > :not(.card-header) { padding-inline: 10px; }
+  .tagline { display: none; }
+}
+
+/* Compact on a phone: fill the screen width, keep it square-ish. */
+@media (max-width: 480px) {
+  body.compact .card { width: 100%; aspect-ratio: auto; border: 0; box-shadow: none; }
+  body.compact .key { min-height: 36px; font-size: 14px; }
+  body.compact .go-button { min-height: 40px; }
+  body.compact .entry-wrap input { height: 38px; }
+}
+
+/* Avoid a flash of the large layout when compact was saved. */
+html.compact-pending .card { visibility: hidden; }
+
+/* Let narrow phones (320px) shrink key columns instead of overflowing. */
+.key-row { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.key { overflow: hidden; }
+.action-row, body.compact .action-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 3fr); }

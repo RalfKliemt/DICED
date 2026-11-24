@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>DICED</title>
+    <meta name="description" content="Offline dice-chain odds calculator for fantasy football board games.">
+    <meta name="theme-color" content="#4051b5">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="DICED">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <script>
+      try {
+        const t = localStorage.getItem("dicedTheme");
+        if (t === "dark" || t === "light") document.documentElement.dataset.theme = t;
+        if (localStorage.getItem("dicedCompact") === "1") document.documentElement.classList.add("compact-pending");
+      } catch (_e) {}
+    </script>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="mobile.css">
+  </head>
+  <body>
+    <div class="page-shell">
+      <main class="stage">
+        <section class="card">
+          <header class="card-header">
+            <h1>DICED</h1>
+            <p class="tagline">Dice chain odds</p>
+            <label class="compact-switch">
+              <input type="checkbox" id="compact-toggle">
+              <span class="switch-track" aria-hidden="true"></span>
+              <span>Compact</span>
+            </label>
+            <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">&#9790;</button>
+          </header>
+
+          <section class="result-zone idle-state" id="result-zone" aria-live="polite">
+            <p class="main-result" id="main-result">-%</p>
+            <p class="rr-result" id="rr-result">-% / -%</p>
+            <p class="armour-line" id="armour-line" hidden></p>
+            <p class="message-line" id="message-line">Tap the buttons or type a chain like 3++ or 4++ 2+ 2d</p>
+          </section>
+
+          <form class="sequence-form" id="sequence-form" autocomplete="off">
+            <div class="entry-wrap">
+              <input
+                id="sequence"
+                name="sequence"
+                type="text"
+                placeholder="3++ 2+ 2d av9k"
+                autocomplete="off"
+                autocapitalize="off"
+                autocorrect="off"
+                spellcheck="false"
+                enterkeyhint="go"
+              >
+              <button type="button" id="syntax-help-open" class="icon-button" aria-haspopup="dialog" aria-controls="syntax-help-panel" title="Syntax help">?</button>
+            </div>
+
+            <div class="keypad" aria-label="Roll buttons">
+              <p class="keypad-label">Skills (whole sequence)</p>
+              <div class="key-row toggle-row" id="toggle-row"></div>
+              <p class="keypad-label">Roll</p>
+              <div class="key-row" data-tokens="2+ 3+ 4+ 5+ 6+"></div>
+              <p class="keypad-label">Roll with skill reroll</p>
+              <div class="key-row" data-tokens="2++ 3++ 4++ 5++ 6++" data-class="key-rr"></div>
+              <p class="keypad-label">Block dice</p>
+              <div class="key-row" data-tokens="-3d -2d 1d 2d 3d" data-class="key-block"></div>
+              <div class="key-row">
+                <button type="button" class="key key-mod" data-suffix="-" title="No turnover: push or better">&minus;<span class="key-word"> No TO</span></button>
+                <button type="button" class="key key-mod" data-suffix="*" title="Pow only">*<span class="key-word"> Pow</span></button>
+                <button type="button" class="key key-mod" data-suffix="/" title="Push only: exactly a push">/<span class="key-word"> Push only</span></button>
+                <button type="button" class="key key-mod" data-suffix="k" title="KO: armour break and KO">k<span class="key-word"> KO</span></button>
+                <button type="button" class="key key-mod" data-suffix="i" title="Injury: armour break and casualty">i<span class="key-word"> Inj</span></button>
+              </div>
+              <p class="keypad-label">Armour</p>
+              <div class="key-row" data-tokens="av7 av8 av9 av10 av11" data-class="key-armor"></div>
+              <div class="key-row action-row">
+                <button type="button" class="key key-ctrl" id="key-back" title="Remove last roll">&#9003;</button>
+                <button type="button" class="key key-ctrl" id="key-clear">Clear</button>
+                <button type="submit" class="go-button">Go!</button>
+              </div>
+            </div>
+          </form>
+
+          <section class="log-panel" id="log-panel" aria-live="polite"></section>
+        </section>
+      </main>
+
+      <section class="legal-panel" aria-label="Legal information">
+        <p class="legal-title">About</p>
+        <p class="legal-text">
+          A free, non-profit fan-made utility, provided as-is without warranty. It is not
+          affiliated with, endorsed by, or sponsored by any rights holder.
+        </p>
+        <details class="legal-details">
+          <summary>Privacy</summary>
+          <p>
+            Everything is calculated on your device. Nothing is sent anywhere. Your log,
+            theme and layout choice are kept only in this browser's local storage.
+          </p>
+        </details>
+      </section>
+    </div>
+
+    <section class="syntax-overlay is-hidden" id="syntax-overlay" aria-hidden="true"></section>
+    <section class="syntax-panel is-hidden" id="syntax-help-panel" role="dialog" aria-modal="true" aria-labelledby="syntax-help-title">
+      <div class="syntax-panel-header">
+        <p id="syntax-help-title" class="syntax-title">Sequence Syntax</p>
+        <button type="button" id="syntax-help-close" class="syntax-close-button" aria-label="Close syntax help">Close</button>
+      </div>
+      <div class="syntax-content">
+        <p>Every roll in the chain must succeed. The smaller numbers are with 1 and 2 team rerolls.</p>
+        <ul>
+          <li><strong>2+</strong> means a D6 roll succeeding on 2 or higher.</li>
+          <li><strong>3++</strong> means a 3+ roll with a skill reroll for that die.</li>
+          <li>Whitespace and + can be left out: <strong>2+3++4+</strong> and <strong>23++4</strong> mean <strong>2+ 3++ 4+</strong>.</li>
+          <li><strong>p</strong> anywhere (or the <strong>Pro</strong> toggle) gives the whole sequence one Pro reroll.</li>
+        </ul>
+        <p>Block dice:</p>
+        <ul>
+          <li><strong>1d</strong>, <strong>2d</strong>, <strong>3d</strong>, <strong>-2d</strong>, <strong>-3d</strong> succeed on a knock-down result.</li>
+          <li>Add <strong>-</strong> (No turnover: push or better), <strong>*</strong> (Pow only), <strong>/</strong> (Push only).</li>
+          <li><strong>b</strong> anywhere (or the <strong>Brawler</strong> toggle) lets every block re-roll one Both Down die.</li>
+          <li>The <strong>Block</strong> toggle (or <strong>+</strong> after a block) counts Both Down as a success.</li>
+        </ul>
+        <p>Armour:</p>
+        <ul>
+          <li><strong>av9</strong> is a 2D6 armour roll needing 9+.</li>
+          <li><strong>k</strong> (KO) or <strong>i</strong> (casualty) adds the injury roll, e.g. <strong>av9k</strong>. Results always list Break / KO / CAS.</li>
+          <li><strong>s</strong> anywhere except right after a D6 digit (or <strong>vs Stunty</strong>) uses the Stunty injury table; <strong>m</strong> (or <strong>MB</strong>) is Mighty Blow.</li>
+        </ul>
+        <p>Example: <strong>2+ 4+ 2d av9i</strong> with Block and MB on.</p>
+      </div>
+    </section>
+
+    <script src="engine.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
